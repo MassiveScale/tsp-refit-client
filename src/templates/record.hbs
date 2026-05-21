@@ -1,0 +1,40 @@
+{{!--
+  record.hbs — rendered once per TypeSpec model or visibility-filtered request
+  type as a C# `public record`.
+
+  Override via tspconfig.yaml:
+    options:
+      "tsp-refit-client":
+        templates:
+          record: "./templates/record.hbs"
+
+  ── Template variables ──────────────────────────────────────────────────────
+
+  {{doc}}           — optional XML <summary> text (pre-escaped; may be falsy).
+                      Rendered as: /// <summary>{{doc}}</summary>
+
+  {{recordName}}    — PascalCase record name, e.g. "Widget" or "PetCreateRequest"
+
+  {{genericSuffix}} — generic type parameter string if the model is generic,
+                      e.g. "<T>" or "". Empty string for non-generic records.
+
+  {{properties}}    — array of property objects in declaration order. Each has:
+    .doc            —   optional XML <summary> text (pre-escaped; may be falsy)
+    .type           —   C# type string incl. optional "?", e.g. "string", "int?"
+    .name           —   PascalCase property name, e.g. "FirstName"
+    .defaultValue   —   default initializer expression (may be falsy), e.g.
+                        "default!" or "[]". Written as `= <defaultValue>;`.
+
+  ── Built-in helpers ────────────────────────────────────────────────────────
+
+  {{indent <text>}}        — prefixes every non-empty line of <text> with 4 spaces
+  {{#if (isDefined val)}}  — true when val is not undefined
+
+--}}
+{{#if doc}}/// <summary>{{doc}}</summary>
+{{/if}}public record {{recordName}}{{genericSuffix}}
+{
+{{#each properties}}{{#if doc}}    /// <summary>{{doc}}</summary>
+{{/if}}    public {{type}} {{name}} { get; init; }{{#if defaultValue}} = {{defaultValue}};{{/if}}
+{{/each}}
+}

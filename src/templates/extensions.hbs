@@ -1,0 +1,67 @@
+{{!--
+  extensions.hbs — generates a static extension class that registers all Refit
+  interfaces for one API version with ASP.NET Core's DI container.
+
+  Override via tspconfig.yaml:
+    options:
+      "tsp-refit-client":
+        templates:
+          extensions: "./templates/extensions.hbs"
+
+  ── Template variables ──────────────────────────────────────────────────────
+
+  {{className}}   — name of the generated static class, e.g. "ApiClientExtensions"
+
+  {{methodName}}  — name of the public registration method, e.g. "AddApiClient"
+
+  {{interfaces}}  — array of Refit interface names to register, e.g.
+                    ["ICustomers", "IPets", "IStores"]
+
+  ── Usage example ────────────────────────────────────────────────────────────
+
+  builder.Services.AddApiClient(c =>
+  {
+      c.BaseAddress = new Uri("https://api.example.com");
+  });
+
+  // With a delegating handler:
+  builder.Services.AddApiClient(
+      c => c.BaseAddress = new Uri("https://api.example.com"),
+      b => b.AddHttpMessageHandler<AuthHandler>());
+
+  ── Built-in helpers ────────────────────────────────────────────────────────
+
+  {{indent <text>}}  — prefixes every non-empty line of <text> with 4 spaces
+
+--}}
+public static class {{className}}
+{
+    /// <summary>
+    /// Registers all generated Refit clients for this API version with the DI container.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configureHttpClient">Configures the underlying <see cref="HttpClient"/> for every interface (e.g. set <c>BaseAddress</c>).</param>
+    /// <param name="configureBuilder">
+    /// Optional. Receives the <see cref="IHttpClientBuilder"/> for each interface and returns it, allowing
+    /// additional configuration such as adding delegating handlers or Polly resilience policies.
+    /// </param>
+    public static IServiceCollection {{methodName}}(
+        this IServiceCollection services,
+        Action<HttpClient> configureHttpClient,
+        Func<IHttpClientBuilder, IHttpClientBuilder>? configureBuilder = null)
+    {
+{{#each interfaces}}        AddSingleClient<{{this}}>(services, configureHttpClient, configureBuilder);
+{{/each}}        return services;
+    }
+
+    private static void AddSingleClient<T>(
+        IServiceCollection services,
+        Action<HttpClient> configureHttpClient,
+        Func<IHttpClientBuilder, IHttpClientBuilder>? configureBuilder) where T : class
+    {
+        var builder = services
+            .AddRefitClient<T>()
+            .ConfigureHttpClient(configureHttpClient);
+        configureBuilder?.Invoke(builder);
+    }
+}

@@ -1,0 +1,30 @@
+{{!--
+  csproj.hbs — renders the generated .csproj project file for the Refit client.
+
+  Override via tspconfig.yaml:
+    options:
+      "tsp-refit-client":
+        templates:
+          csproj: "./templates/csproj.hbs"
+
+  ── Template variables ──────────────────────────────────────────────────────
+
+  {{rootNamespace}} — C# root namespace, e.g. "Acme.Api.Client"
+  {{netVersion}}    — Target framework moniker, e.g. "net8.0"
+
+--}}
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>{{{netVersion}}}</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>{{{rootNamespace}}}</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Refit" Version="8.*" />
+    <PackageReference Include="Refit.HttpClientFactory" Version="8.*" />
+  </ItemGroup>
+
+</Project>

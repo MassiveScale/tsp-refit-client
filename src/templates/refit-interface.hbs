@@ -1,0 +1,31 @@
+{{!--
+  refit-interface.hbs — rendered once per TypeSpec interface as a Refit
+  `public interface`.
+
+  Override via tspconfig.yaml:
+    options:
+      "tsp-refit-client":
+        templates:
+          refit-interface: "./templates/refit-interface.hbs"
+
+  ── Template variables ──────────────────────────────────────────────────────
+
+  {{interfaceName}} — C# interface name, e.g. "IWidgets"
+
+  {{methodsBlock}}  — pre-rendered string containing all method declarations,
+                      each indented with 4 spaces and separated by blank lines.
+                      Each method block contains:
+                        - Optional doc comment: /// <summary>...</summary>
+                        - Refit attribute:      [Get("/path")]
+                        - Method signature:     Task<T> MethodAsync(params);
+
+  ── Built-in helpers ────────────────────────────────────────────────────────
+
+  {{indent <text>}}  — prefixes every non-empty line of <text> with 4 spaces
+  {{eq a b}}         — strict equality
+
+--}}
+public interface {{interfaceName}}
+{
+{{{methodsBlock}}}
+}
