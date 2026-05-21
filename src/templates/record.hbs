@@ -31,10 +31,14 @@
   {{#if (isDefined val)}}  — true when val is not undefined
 
 --}}
-{{#if doc}}/// <summary>{{doc}}</summary>
-{{/if}}public record {{recordName}}{{genericSuffix}}
+/// <summary>
+{{#if doc}}/// {{doc}}
+{{/if}}/// </summary>
+public record {{recordName}}{{genericSuffix}}
 {
-{{#each properties}}{{#if doc}}    /// <summary>{{doc}}</summary>
+{{#each properties}}{{#if doc}}    /// <summary>
+    /// {{doc}}
+    /// </summary>
 {{/if}}    public {{type}} {{name}} { get; init; }{{#if defaultValue}} = {{defaultValue}};{{/if}}
 {{/each}}
 }

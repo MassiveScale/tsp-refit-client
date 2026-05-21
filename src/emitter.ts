@@ -5,6 +5,7 @@ import {
   Scalar,
   Enum,
   Type,
+  Interface,
   Namespace,
   Program,
   getDoc,
@@ -54,6 +55,8 @@ import { EmitterOptions, createDiagnostic } from "./lib.js";
 export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<void> {
   const { program, emitterOutputDir, options } = context;
   if (program.compilerOptions.noEmit) return;
+
+  await deleteGcsFiles(program, emitterOutputDir);
 
   const renderer = buildRenderer(program, options);
 
@@ -113,6 +116,31 @@ async function writeFile(program: Program, filePath: string, content: string): P
   await program.host.writeFile(filePath, content);
 }
 
+async function deleteGcsFiles(program: Program, dir: string): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await program.host.readDir(dir);
+  } catch {
+    return;
+  }
+  await Promise.all(
+    entries.map(async (entry) => {
+      const entryPath = resolvePath(dir, entry);
+      let stat;
+      try {
+        stat = await program.host.stat(entryPath);
+      } catch {
+        return;
+      }
+      if (stat.isDirectory()) {
+        await deleteGcsFiles(program, entryPath);
+      } else if (stat.isFile() && entry.endsWith(".g.cs")) {
+        await program.host.rm(entryPath);
+      }
+    })
+  );
+}
+
 // ─── Service-level orchestration ────────────────────────────────────────────
 
 async function emitService(
@@ -124,24 +152,33 @@ async function emitService(
   renderer: Renderer
 ): Promise<void> {
   const nsFullName = getNamespaceFullName(serviceNs);
+  const projectName = options["project-name"] ?? `${nsFullName}Client`;
+  const csharpName = projectName.includes(".")
+    ? projectName.substring(projectName.lastIndexOf(".") + 1)
+    : projectName;
+  const clientName = options["client-name"] ?? csharpName;
   const baseNs = options["root-namespace"] ?? `${nsFullName}.Client`;
   const netVersion = options["net-version"] ?? "net8.0";
+
+  const nugetDescription = options["nuget-description"] ?? `Refit client for the ${baseNs} API`;
+  const nugetTitle = options["nuget-title"] ?? (options["client-name"] !== undefined ? clientName : undefined);
+  const allVersions = getAllVersions(program, serviceNs) ?? [];
 
   const models = new Map<string, Model>();
   const enums = new Map<string, Enum>();
 
   // Group operations by container (Interface or Namespace)
-  const byContainer = new Map<string, { name: string; ops: HttpOperation[] }>();
+  const byContainer = new Map<string, { name: string; container: Interface | Namespace; ops: HttpOperation[] }>();
   for (const op of operations) {
     const c = op.container;
     const key = c.kind === "Interface" ? c.name : `__ns_${(c as Namespace).name}`;
     const name = c.kind === "Interface" ? c.name : serviceNs.name;
-    if (!byContainer.has(key)) byContainer.set(key, { name, ops: [] });
+    if (!byContainer.has(key)) byContainer.set(key, { name, container: c, ops: [] });
     byContainer.get(key)!.ops.push(op);
   }
 
-  const versions = getAllVersions(program, serviceNs);
-  const versionsToEmit = resolveTargetVersions(program, versions ?? [], options);
+  const versions = allVersions;
+  const versionsToEmit = resolveTargetVersions(program, versions, options);
   if (versionsToEmit === null) return; // diagnostic already reported
 
   // Use version subfolders only when explicitly emitting all versions.
@@ -150,42 +187,45 @@ async function emitService(
   if (versionsToEmit.length > 0) {
     for (const version of versionsToEmit) {
       const vDir = useVersionedFolders ? resolvePath(outputDir, version.value) : outputDir;
-      const vNs = useVersionedFolders ? `${baseNs}.${sanitizeVersionForNs(version.value)}` : baseNs;
+      const shouldAppendVersion = useVersionedFolders || options["version-in-namespace"] === true;
+      const vNs = shouldAppendVersion ? `${baseNs}.${sanitizeVersionForNs(version.value)}` : baseNs;
       const requestTypes = new Map<string, RequestType>();
       const vInterfaceNames: string[] = [];
-      for (const { name, ops } of byContainer.values()) {
+      for (const { name, container, ops } of byContainer.values()) {
         const vOps = ops.filter((op) => isOpInVersion(program, op, version));
         if (vOps.length === 0) continue;
         vInterfaceNames.push(`I${name}`);
-        const content = buildInterface(`I${name}`, vNs, vOps, program, models, enums, version, requestTypes, renderer);
-        await writeFile(program, resolvePath(vDir, "Endpoints", `I${name}.cs`), content);
+        const containerDoc = getDoc(program, container);
+        const content = buildInterface(`I${name}`, vNs, vOps, containerDoc, program, models, enums, version, requestTypes, renderer);
+        await writeFile(program, resolvePath(vDir, "Endpoints", `I${name}.g.cs`), content);
       }
       for (const [, rt] of requestTypes) {
         const content = buildFilteredRecord(rt.name, rt.doc, rt.props, vNs, program, models, enums, renderer);
         // In single-version mode, request types live alongside regular models.
         const rtDir = useVersionedFolders ? vDir : resolvePath(outputDir, "Models");
-        await writeFile(program, resolvePath(rtDir, `${rt.name}.cs`), content);
+        await writeFile(program, resolvePath(rtDir, `${rt.name}.g.cs`), content);
       }
       if (vInterfaceNames.length > 0) {
-        const content = buildExtensions(serviceNs.name, vNs, vInterfaceNames, renderer);
-        await writeFile(program, resolvePath(vDir, `${serviceNs.name}ClientExtensions.cs`), content);
+        const content = buildExtensions(clientName, vNs, vInterfaceNames, renderer);
+        await writeFile(program, resolvePath(vDir, `${clientName}Extensions.g.cs`), content);
       }
     }
   } else {
     const requestTypes = new Map<string, RequestType>();
     const interfaceNames: string[] = [];
-    for (const { name, ops } of byContainer.values()) {
+    for (const { name, container, ops } of byContainer.values()) {
       interfaceNames.push(`I${name}`);
-      const content = buildInterface(`I${name}`, baseNs, ops, program, models, enums, undefined, requestTypes, renderer);
-      await writeFile(program, resolvePath(outputDir, "Endpoints", `I${name}.cs`), content);
+      const containerDoc = getDoc(program, container);
+      const content = buildInterface(`I${name}`, baseNs, ops, containerDoc, program, models, enums, undefined, requestTypes, renderer);
+      await writeFile(program, resolvePath(outputDir, "Endpoints", `I${name}.g.cs`), content);
     }
     for (const [, rt] of requestTypes) {
       const content = buildFilteredRecord(rt.name, rt.doc, rt.props, baseNs, program, models, enums, renderer);
-      await writeFile(program, resolvePath(outputDir, "Models", `${rt.name}.cs`), content);
+      await writeFile(program, resolvePath(outputDir, "Models", `${rt.name}.g.cs`), content);
     }
     if (interfaceNames.length > 0) {
-      const content = buildExtensions(serviceNs.name, baseNs, interfaceNames, renderer);
-      await writeFile(program, resolvePath(outputDir, `${serviceNs.name}ClientExtensions.cs`), content);
+      const content = buildExtensions(clientName, baseNs, interfaceNames, renderer);
+      await writeFile(program, resolvePath(outputDir, `${clientName}Extensions.g.cs`), content);
     }
   }
 
@@ -193,22 +233,80 @@ async function emitService(
   for (const [, model] of models) {
     if (!isEmittable(model, nsFullName)) continue;
     const content = buildRecord(model, baseNs, program, models, enums, renderer);
-    await writeFile(program, resolvePath(outputDir, "Models", `${model.name}.cs`), content);
+    await writeFile(program, resolvePath(outputDir, "Models", `${model.name}.g.cs`), content);
   }
   for (const [, e] of enums) {
     if (!isEmittableEnum(e, nsFullName)) continue;
     const content = buildEnum(e, baseNs, program, renderer);
-    await writeFile(program, resolvePath(outputDir, "Models", `${e.name}.cs`), content);
+    await writeFile(program, resolvePath(outputDir, "Models", `${e.name}.g.cs`), content);
   }
 
   // Emit project file
   if (options["emit-project-file"] !== false) {
-    const csprojPath = resolvePath(outputDir, `${serviceNs.name}Client.csproj`);
+    const csprojPath = resolvePath(outputDir, `${projectName}.csproj`);
     const overwrite = options["overwrite-project-file"] ?? false;
     if (overwrite || !(await fileExists(program, csprojPath))) {
-      await writeFile(program, csprojPath, buildCsproj(baseNs, netVersion, renderer));
+      await writeFile(
+        program,
+        csprojPath,
+        buildCsproj(baseNs, netVersion, deriveNugetVersion(allVersions, options), nugetDescription, nugetTitle, options, renderer)
+      );
     }
   }
+}
+
+// ─── NuGet version derivation ────────────────────────────────────────────────
+
+/**
+ * Attempts to parse a semver string from a TypeSpec version value.
+ * Accepts an optional leading `v`/`V`, two-part (`1.2`) or three-part (`1.2.3`)
+ * numeric versions, and preserves any pre-release / build-metadata suffix.
+ * Returns `undefined` when the string cannot be interpreted as semver.
+ */
+export function tryParseSemver(value: string): string | undefined {
+  const stripped = value.replace(/^[vV]/, "");
+  const match = stripped.match(/^(\d+)\.(\d+)(?:\.(\d+))?([-+].+)?$/);
+  if (!match) return undefined;
+  const patch = match[3] ?? "0";
+  const rest = match[4] ?? "";
+  return `${match[1]}.${match[2]}.${patch}${rest}`;
+}
+
+/** Formats a date as a CalVer string (`YYYY.MM.DD`). */
+export function toCalVer(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}.${m}.${d}`;
+}
+
+/**
+ * Derives the NuGet `<Version>` to write into the `.csproj`.
+ *
+ * Priority:
+ * 1. `nuget-version` option (explicit override)
+ * 2. Semver parsed from the targeted TypeSpec API version
+ *    - `target-version` (single-version mode) if specified
+ *    - Latest declared version otherwise (covers both default single-version and all-versions)
+ * 3. CalVer (`YYYY.MM.DD`) when no version is declared or semver cannot be parsed
+ */
+export function deriveNugetVersion(allVersions: Version[], options: EmitterOptions): string {
+  if (options["nuget-version"]) return options["nuget-version"];
+
+  let versionString: string | undefined;
+  if (allVersions.length > 0) {
+    if (options["target-version"] && options["all-versions"] !== true) {
+      versionString = allVersions.find((v) => v.value === options["target-version"])?.value;
+    }
+    versionString ??= allVersions[allVersions.length - 1].value;
+  }
+
+  if (versionString) {
+    const parsed = tryParseSemver(versionString);
+    if (parsed) return parsed;
+  }
+
+  return toCalVer(new Date());
 }
 
 // ─── Version selection ───────────────────────────────────────────────────────
@@ -335,6 +433,7 @@ function buildInterface(
   csName: string,
   csNs: string,
   ops: HttpOperation[],
+  doc: string | undefined,
   program: Program,
   models: Map<string, Model>,
   enums: Map<string, Enum>,
@@ -343,13 +442,13 @@ function buildInterface(
   renderer: Renderer
 ): string {
   const methods = ops.map((op) => buildMethodView(op, program, models, enums, version, requestTypes));
-  const view: RefitInterfaceView = { interfaceName: csName, methods };
+  const view: RefitInterfaceView = { interfaceName: csName, doc, methods };
   const body = renderer.renderRefitInterface(view);
   const fileView: FileView = {
     namespace: csNs,
     usings: sortUsings(["Refit", "System.Collections.Generic", "System.Threading", "System.Threading.Tasks"]),
     body,
-    fileName: `${csName}.cs`,
+    fileName: `${csName}.g.cs`,
   };
   return renderer.renderFile(fileView);
 }
@@ -517,7 +616,7 @@ function buildRecord(
     namespace: csNs,
     usings: sortUsings(["System", "System.Collections.Generic"]),
     body,
-    fileName: `${model.name}.cs`,
+    fileName: `${model.name}.g.cs`,
   };
   return renderer.renderFile(fileView);
 }
@@ -544,7 +643,7 @@ function buildFilteredRecord(
     namespace: csNs,
     usings: sortUsings(["System", "System.Collections.Generic"]),
     body,
-    fileName: `${name}.cs`,
+    fileName: `${name}.g.cs`,
   };
   return renderer.renderFile(fileView);
 }
@@ -577,6 +676,14 @@ function gatherTemplateParams(type: Type, out: string[]): void {
   } else if (type.kind === "Model") {
     const m = type as Model;
     if (m.indexer) gatherTemplateParams(m.indexer.value, out);
+    // When Array<T> is represented as a template instance (no indexer), recurse into args.
+    if (m.templateMapper?.args) {
+      for (const arg of m.templateMapper.args) {
+        if ((arg as { entityKind?: string }).entityKind === "Type") {
+          gatherTemplateParams(arg as Type, out);
+        }
+      }
+    }
     for (const [, p] of m.properties) gatherTemplateParams(p.type, out);
   }
 }
@@ -614,15 +721,32 @@ function buildEnum(e: Enum, csNs: string, program: Program, renderer: Renderer):
     namespace: csNs,
     usings: sortUsings(["System.Runtime.Serialization", "System.Text.Json.Serialization"]),
     body,
-    fileName: `${e.name}.cs`,
+    fileName: `${e.name}.g.cs`,
   };
   return renderer.renderFile(fileView);
 }
 
 // ─── C# project file ────────────────────────────────────────────────────────
 
-function buildCsproj(rootNs: string, netVersion: string, renderer: Renderer): string {
-  const view: CsprojView = { rootNamespace: rootNs, netVersion };
+function buildCsproj(
+  rootNs: string,
+  netVersion: string,
+  nugetVersion: string,
+  nugetDescription: string,
+  nugetTitle: string | undefined,
+  options: EmitterOptions,
+  renderer: Renderer
+): string {
+  const view: CsprojView = {
+    rootNamespace: rootNs,
+    netVersion,
+    nugetDescription,
+    nugetTitle,
+    nugetPackageId: options["nuget-package-id"],
+    nugetVersion,
+    nugetAuthors: options["nuget-authors"],
+    nugetTags: options["nuget-tags"],
+  };
   return renderer.renderCsproj(view);
 }
 
@@ -634,8 +758,8 @@ function buildExtensions(
   interfaceNames: string[],
   renderer: Renderer
 ): string {
-  const className = `${serviceName}ClientExtensions`;
-  const methodName = `Add${serviceName}Client`;
+  const className = `${serviceName}Extensions`;
+  const methodName = `Add${serviceName}`;
   const view: ExtensionsView = { className, methodName, interfaces: interfaceNames };
   const body = renderer.renderExtensions(view);
   const fileView: FileView = {
@@ -647,7 +771,7 @@ function buildExtensions(
       "System.Net.Http",
     ]),
     body,
-    fileName: `${className}.cs`,
+    fileName: `${className}.g.cs`,
   };
   return renderer.renderFile(fileView);
 }
@@ -682,6 +806,10 @@ function mapType(
         const args = m.templateMapper.args
           .filter((a): a is Type => (a as { entityKind?: string }).entityKind === "Type")
           .map((a) => mapType(a, program, models, enums));
+        // Array<T> represented as a template instance (unresolved element type) → List<T>
+        if (m.name === "Array" && args.length === 1) {
+          return `List<${args[0]}>`;
+        }
         const decl = m.namespace?.models.get(m.name);
         if (decl) models.set(m.name, decl);
         else models.set(m.name, m);

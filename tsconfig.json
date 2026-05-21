@@ -14,5 +14,6 @@
     /* Linting */
     "strict": true
   },
-  "include": ["src", "test"]
+  "include": ["src", "test"],
+  "exclude": ["dist", "node_modules"]
 }

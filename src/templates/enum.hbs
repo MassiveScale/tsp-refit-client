@@ -24,11 +24,15 @@
   {{eq a b}}         — strict equality
 
 --}}
-{{#if doc}}/// <summary>{{doc}}</summary>
-{{/if}}[JsonConverter(typeof(JsonStringEnumConverter))]
+/// <summary>
+{{#if doc}}/// {{doc}}
+{{/if}}/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum {{enumName}}
 {
-{{#each members}}{{#if doc}}    /// <summary>{{doc}}</summary>
+{{#each members}}{{#if doc}}    /// <summary>
+    /// {{doc}}
+    /// </summary>
 {{/if}}    [EnumMember(Value = "{{memberValue}}")]
     {{name}},
 

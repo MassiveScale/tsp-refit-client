@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.1.0-beta.2] - 2026-05-21
+
+### Changed
+- All generated C# source files now use the `.g.cs` extension instead of `.cs`, following the .NET source-generator convention for auto-generated code.
+- All `.g.cs` files in the emitter output directory are deleted before each emit run, preventing stale generated files from accumulating across regenerations.
+- All top-level generated C# types (records, enums, interfaces, extension classes) now always include a `/// <summary>` XML doc block, with the opening and closing tags on their own lines. Previously the comment was only emitted when a `@doc` annotation was present on the TypeSpec type.
+- Method-level XML doc comments in Refit interfaces now use the same multi-line `<summary>` format.
+
+### Added
+- `project-name` emitter option: overrides the full project name used for the `.csproj` filename and DI extension class (e.g. `project-name: PetStoreClient` → `PetStoreClient.csproj`, `PetStoreClientExtensions.cs`, `AddPetStoreClient(...)`). Defaults to the full TypeSpec namespace + `Client` suffix (e.g. namespace `My.Api` → `My.ApiClient`). Dots are valid in the project name; the C# class identifier uses only the final dot-separated segment.
+- `client-name` emitter option: the display name for the client. Used as the DI extension class/method prefix (e.g. `client-name: PetStore` → `PetStoreExtensions.g.cs`, `AddPetStore(...)`). Also used as the default NuGet `<Title>` unless `nuget-title` is explicitly set.
+- NuGet package property options: `nuget-package-id`, `nuget-version`, `nuget-authors`, `nuget-description`, `nuget-title`, `nuget-tags`. All are optional; when omitted the corresponding `<PropertyGroup>` element is not emitted (except `<Description>`, which defaults to `Refit client for the {namespace} API`).
+- `version-in-namespace` emitter option (default `false`): when `true`, appends the sanitized API version to the C# namespace in single-version mode (e.g. `MyApi.Client.V2_0`). Ignored when `all-versions` is `true` — versions are always appended in that mode to keep namespaces distinct.
+- `prepare` script added to `package.json` so the package builds automatically when installed directly from GitHub.
+- Refit interface `@doc` annotations are now surfaced on the generated C# `public interface` declaration.
+
 ## [1.0.0-beta] - 2026-05-20
 
 ### Changed

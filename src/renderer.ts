@@ -96,6 +96,8 @@ export interface MethodView {
 export interface RefitInterfaceView {
   /** C# interface name, e.g. `"IWidgets"`. */
   interfaceName: string;
+  /** Optional XML doc text (pre-escaped). */
+  doc?: string;
   /** Ordered list of method view models. */
   methods: MethodView[];
 }
@@ -128,6 +130,18 @@ export interface CsprojView {
   rootNamespace: string;
   /** Target framework moniker, e.g. `"net8.0"`. */
   netVersion: string;
+  /** NuGet `<Description>`. Always present; defaults to a generated string when not supplied. */
+  nugetDescription: string;
+  /** NuGet `<PackageId>`. Omitted from the project file when undefined. */
+  nugetPackageId?: string;
+  /** NuGet `<Version>`. Always present; derived from the API version or CalVer when not supplied via option. */
+  nugetVersion: string;
+  /** NuGet `<Authors>`. Omitted when undefined. */
+  nugetAuthors?: string;
+  /** NuGet `<Title>`. Omitted when undefined. */
+  nugetTitle?: string;
+  /** NuGet `<PackageTags>`. Omitted when undefined. */
+  nugetTags?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -192,7 +206,11 @@ function loadTemplate(
 
 function renderMethodBlock(m: MethodView): string {
   const lines: string[] = [];
-  if (m.doc) lines.push(`    /// <summary>${m.doc}</summary>`);
+  if (m.doc) {
+    lines.push(`    /// <summary>`);
+    lines.push(`    /// ${m.doc}`);
+    lines.push(`    /// </summary>`);
+  }
   lines.push(`    [${m.verb}("${m.path}")]`);
   lines.push(`    ${m.returnType} ${m.methodName}(${m.paramsText});`);
   return lines.join("\n");
@@ -239,7 +257,7 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
         methodBlocks.length > 0
           ? methodBlocks.join("\n\n") + "\n"
           : "";
-      return refitInterfaceTemplate({ interfaceName: view.interfaceName, methodsBlock });
+      return refitInterfaceTemplate({ interfaceName: view.interfaceName, doc: view.doc, methodsBlock });
     },
 
     renderCsproj(view) {
