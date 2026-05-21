@@ -1,5 +1,5 @@
 emit:
-  - "tsp-refit-client"
+  - "@massivescale/tsp-refit-client"
 options:
-  "tsp-refit-client":
+  "@massivescale/tsp-refit-client":
     emitter-output-dir: "{output-dir}/defaults"

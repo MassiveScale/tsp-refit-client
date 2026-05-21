@@ -131,7 +131,7 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
 };
 
 export const $lib = createTypeSpecLibrary({
-  name: "tsp-refit-client",
+  name: "@massivescale/tsp-refit-client",
   diagnostics: {
     "template-load-failed": {
       severity: "error",

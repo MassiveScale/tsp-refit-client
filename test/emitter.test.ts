@@ -284,7 +284,7 @@ describe("emitter", () => {
       { "target-version": "v9.0" }
     );
     ok(
-      diags.some((d) => d.code === "tsp-refit-client/version-not-found"),
+      diags.some((d) => d.code === "@massivescale/tsp-refit-client/version-not-found"),
       "Expected version-not-found diagnostic"
     );
   });

@@ -6,7 +6,7 @@ This file is the **single source of truth** for AI assistant guidance in this re
 
 ## Project Overview
 
-`tsp-refit-client` is a [TypeSpec](https://typespec.io) emitter that generates C# API clients using [Refit](https://www.nuget.org/packages/Refit). Given a TypeSpec definition, it produces a C# project with Refit-capable interfaces for each HTTP operation (`GET`, `POST`, `PATCH`, `DELETE`), including version-aware client generation.
+`@massivescale/tsp-refit-client` is a [TypeSpec](https://typespec.io) emitter that generates C# API clients using [Refit](https://www.nuget.org/packages/Refit). Given a TypeSpec definition, it produces a C# project with Refit-capable interfaces for each HTTP operation (`GET`, `POST`, `PATCH`, `DELETE`), including version-aware client generation.
 
 The emitter generates versioned Refit interfaces, C# model records, and C# enums. See `src/emitter.ts` for the implementation.
 
@@ -44,12 +44,12 @@ node --test dist/test/emitter.test.js
 
 TypeSpec discovers this emitter via two required exports in `src/index.ts`:
 
-- **`$lib`** (`src/lib.ts`) — Registers the library name (`"tsp-refit-client"`) and declares compiler diagnostics via `createTypeSpecLibrary`. Add new diagnostic codes here before using `reportDiagnostic` or `createDiagnostic`.
+- **`$lib`** (`src/lib.ts`) — Registers the library name (`"@massivescale/tsp-refit-client"`) and declares compiler diagnostics via `createTypeSpecLibrary`. Add new diagnostic codes here before using `reportDiagnostic` or `createDiagnostic`.
 - **`$onEmit`** (`src/emitter.ts`) — The emitter entry point called by the TypeSpec compiler. Receives an `EmitContext` containing the program's type graph. All code generation logic lives here or is called from here.
 
 ### Test Infrastructure
 
-`test/test-host.ts` sets up a TypeSpec test harness using `createTester` pointed at the repo root, with `tsp-refit-client` as the loaded library. It exports two helpers:
+`test/test-host.ts` sets up a TypeSpec test harness using `createTester` pointed at the repo root, with `@massivescale/tsp-refit-client` as the loaded library. It exports two helpers:
 
 - `emit(code)` — Compiles inline TypeSpec, asserts no diagnostics, returns `Record<string, string>` mapping output file paths to their string content.
 - `emitWithDiagnostics(code)` — Same but also returns compiler diagnostics for testing error cases.
@@ -58,7 +58,7 @@ Tests use Node.js native test runner (`node:test` / `node:assert`) — no extern
 
 ### Example
 
-`example/versioned-api/` contains a versioned Pet Store TypeSpec API used for manual end-to-end validation. Its `package.json` currently references `@massivescale/tsp-aspnetcore-api` (a sibling emitter project) — this needs updating to reference `tsp-refit-client` once the emitter is functional. Run the example builds via `example/versioned-api/build.ps1`.
+`example/versioned-api/` contains a versioned Pet Store TypeSpec API used for manual end-to-end validation. Its `package.json` currently references `@massivescale/tsp-aspnetcore-api` (a sibling emitter project) — this needs updating to reference `@massivescale/tsp-refit-client` once the emitter is functional. Run the example builds via `example/versioned-api/build.ps1`.
 
 ---
 

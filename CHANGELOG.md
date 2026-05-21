@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Handlebars template support**: all generated C# files are now rendered through overridable Handlebars templates (`file.hbs`, `record.hbs`, `enum.hbs`, `refit-interface.hbs`, `csproj.hbs`). Override any template via `tspconfig.yaml`:
   ```yaml
   options:
-    "tsp-refit-client":
+    "@massivescale/tsp-refit-client":
       templates:
         record: "./templates/record.hbs"
   ```
@@ -72,7 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Uses `getAvailabilityMap` from `@typespec/versioning` to filter operations per API version
   - Emitter options: `root-namespace` and `net-version`
 - Added `@typespec/http`, `@typespec/versioning`, and `@typespec/rest` as dev dependencies
-- Updated example `versioned-api` to reference `tsp-refit-client` and added `Create<T>` alias to `common.tsp`
+- Updated example `versioned-api` to reference `@massivescale/tsp-refit-client` and added `Create<T>` alias to `common.tsp`
 - 9-test suite covering interface generation, model records, enums, versioning, and the `.csproj` output
 
 ## [0.1.0] - 2026-05-20

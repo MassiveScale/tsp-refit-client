@@ -1,4 +1,4 @@
-# tsp-refit-client
+# @massivescale/tsp-refit-client
 
 [TypeSpec](https://typespec.io) emitter for generating C# API clients using [Refit](https://www.nuget.org/packages/Refit).
 
@@ -15,16 +15,16 @@ It is also version-aware, allowing you to call any endpoint version from a singl
 Add the emitter to your TypeSpec project:
 
 ```bash
-npm install tsp-refit-client
+npm install @massivescale/tsp-refit-client
 ```
 
 Configure it in your `tspconfig.yaml`:
 
 ```yaml
 emit:
-  - "tsp-refit-client"
+  - "@massivescale/tsp-refit-client"
 options:
-  "tsp-refit-client":
+  "@massivescale/tsp-refit-client":
     emitter-output-dir: "{output-dir}/client"
 ```
 

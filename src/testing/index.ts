@@ -3,6 +3,6 @@ import { createTestLibrary, TypeSpecTestLibrary } from "@typespec/compiler/testi
 import { fileURLToPath } from "url";
 
 export const TspRefitClientTestLibrary: TypeSpecTestLibrary = createTestLibrary({
-  name: "tsp-refit-client",
+  name: "@massivescale/tsp-refit-client",
   packageRoot: resolvePath(fileURLToPath(import.meta.url), "../../../../"),
 });

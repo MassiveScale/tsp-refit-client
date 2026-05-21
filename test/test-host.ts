@@ -4,11 +4,11 @@ import { createTester } from "@typespec/compiler/testing";
 import type { EmitterOptions } from "../src/lib.js";
 
 const BaseTester = createTester(resolvePath(import.meta.dirname, "../.."), {
-  libraries: ["tsp-refit-client", "@typespec/http", "@typespec/versioning"],
+  libraries: ["@massivescale/tsp-refit-client", "@typespec/http", "@typespec/versioning"],
 });
 
 function testerFor(options?: EmitterOptions) {
-  return BaseTester.emit("tsp-refit-client", (options ?? {}) as Record<string, unknown>);
+  return BaseTester.emit("@massivescale/tsp-refit-client", (options ?? {}) as Record<string, unknown>);
 }
 
 export async function emitWithDiagnostics(
