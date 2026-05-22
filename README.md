@@ -121,6 +121,18 @@ public class ProductService(ApiClient api)
 
 The aggregate client (`ApiClient` by default, or the name derived from `client-name`/`project-name`) exposes one strongly-typed property per TypeSpec `interface` in your spec.
 
+Optional TypeSpec parameters (`?`) are emitted as nullable C# types with `= null` defaults so callers can omit them:
+
+```csharp
+// TypeSpec: list(@query skip?: int32, @query take?: int32): Item[];
+Task<List<Item>> ListAsync(int? skip = null, int? take = null, CancellationToken cancellationToken = default);
+
+// Call site — all of these are valid:
+await api.Items.ListAsync(ct);
+await api.Items.ListAsync(skip: 20, ct);
+await api.Items.ListAsync(skip: 20, take: 10, ct);
+```
+
 ## Development
 
 ### Prerequisites

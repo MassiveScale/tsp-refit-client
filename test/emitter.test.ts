@@ -949,4 +949,78 @@ describe("emitter", () => {
     ok(content.includes("/// Op first."), "Expected first op doc line");
     ok(content.includes("/// Op second."), "Expected second op doc line");
   });
+
+  // ─── Optional / nullable parameters ──────────────────────────────────────────
+
+  it("emits optional query params as nullable with default null", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(@query skip?: int32, @query take?: int32): string[];
+      }
+    `);
+
+    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    ok(ifaceFile, "Expected IItems.g.cs");
+    const content = results[ifaceFile];
+    ok(content.includes("int? skip = null"), "Expected optional skip as int? with default null");
+    ok(content.includes("int? take = null"), "Expected optional take as int? with default null");
+  });
+
+  it("emits required query params without nullable suffix", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(@query filter: string): string[];
+      }
+    `);
+
+    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    ok(ifaceFile, "Expected IItems.g.cs");
+    const content = results[ifaceFile];
+    ok(content.includes("string filter"), "Expected required filter as plain string");
+    ok(!content.includes("string? filter"), "Required param should not be nullable");
+    ok(!content.includes("= null"), "Required param should not have null default");
+  });
+
+  it("places optional params after required ones when mixed", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      model Item { name: string; }
+
+      @route("/stores/{storeId}/items")
+      interface Items {
+        @post create(@path storeId: string, @query dryRun?: boolean, @body body: Item): Item;
+      }
+    `);
+
+    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    ok(ifaceFile, "Expected IItems.g.cs");
+    const content = results[ifaceFile];
+    const methodLine = content.split("\n").find((l) => l.includes("CreateAsync("));
+    ok(methodLine, "Expected CreateAsync method");
+    const skipIdx = methodLine!.indexOf("storeId");
+    const bodyIdx = methodLine!.indexOf("[Body]");
+    const dryRunIdx = methodLine!.indexOf("dryRun");
+    ok(skipIdx < bodyIdx, "Required path param storeId must come before required body");
+    ok(bodyIdx < dryRunIdx, "Required body must come before optional dryRun");
+    ok(content.includes("bool? dryRun = null"), "Expected dryRun as bool? with default null");
+  });
 });

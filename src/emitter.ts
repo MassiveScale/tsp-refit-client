@@ -495,23 +495,35 @@ function buildMethodView(
   const returnType = resolveReturnType(op.responses, program, models, enums);
   const doc = getDoc(program, op.operation);
 
-  const params: string[] = [];
+  const requiredParams: string[] = [];
+  const optionalParams: string[] = [];
 
   for (const param of op.parameters.parameters) {
     const csType = mapType(param.param.type, program, models, enums);
     const csParam = toCsParamName(param.param.name);
+    const isOptional = param.param.optional;
+    const nullSuffix = isOptional ? "?" : "";
+    const defaultSuffix = isOptional ? " = null" : "";
+
+    let paramStr: string;
     if (param.type === "query") {
       const httpName = getQueryParamName(program, param.param) ?? param.param.name;
       if (httpName !== param.param.name) {
-        params.push(`[AliasAs("${httpName}")] ${csType} ${csParam}`);
+        paramStr = `[AliasAs("${httpName}")] ${csType}${nullSuffix} ${csParam}${defaultSuffix}`;
       } else {
-        params.push(`${csType} ${csParam}`);
+        paramStr = `${csType}${nullSuffix} ${csParam}${defaultSuffix}`;
       }
     } else if (param.type === "header") {
       const headerName = getHeaderFieldName(program, param.param);
-      params.push(`[Header("${headerName}")] ${csType} ${csParam}`);
+      paramStr = `[Header("${headerName}")] ${csType}${nullSuffix} ${csParam}${defaultSuffix}`;
     } else {
-      params.push(`${csType} ${csParam}`);
+      paramStr = `${csType}${nullSuffix} ${csParam}${defaultSuffix}`;
+    }
+
+    if (isOptional) {
+      optionalParams.push(paramStr);
+    } else {
+      requiredParams.push(paramStr);
     }
   }
 
@@ -542,10 +554,10 @@ function buildMethodView(
       }
     }
 
-    params.push(`[Body] ${bodyType} body`);
+    requiredParams.push(`[Body] ${bodyType} body`);
   }
 
-  params.push("CancellationToken cancellationToken = default");
+  const params = [...requiredParams, ...optionalParams, "CancellationToken cancellationToken = default"];
 
   return {
     doc: doc ? escapeXml(doc) : undefined,
