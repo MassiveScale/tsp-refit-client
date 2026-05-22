@@ -33,6 +33,8 @@ import {
   resolveRequestVisibility,
 } from "@typespec/http";
 import { getAllVersions, getAvailabilityMap, Availability, Version } from "@typespec/versioning";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   createRenderer,
@@ -67,6 +69,10 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
     if (!isService(program, service.namespace)) continue;
     if (service.operations.length === 0) continue;
     await emitService(program, service.namespace, service.operations, emitterOutputDir, options, renderer);
+  }
+
+  if (options["dotnet-format"] !== false) {
+    runDotnetFormat(program, emitterOutputDir);
   }
 }
 
@@ -139,6 +145,27 @@ async function deleteGcsFiles(program: Program, dir: string): Promise<void> {
       }
     })
   );
+}
+
+// ─── dotnet format ───────────────────────────────────────────────────────────
+
+function runDotnetFormat(program: Program, outputDir: string): void {
+  // Skip when the output directory doesn't exist on the real filesystem
+  // (e.g. in-memory test harness).
+  if (!existsSync(outputDir)) return;
+
+  const result = spawnSync("dotnet", ["format", outputDir, "--no-restore"], {
+    encoding: "utf-8",
+    stdio: "pipe",
+  });
+
+  if (result.error || (result.status !== null && result.status !== 0)) {
+    const message =
+      result.error?.message ?? result.stderr?.trim() ?? `exited with code ${result.status}`;
+    program.reportDiagnostic(
+      createDiagnostic({ code: "dotnet-format-failed", target: NoTarget, format: { message } })
+    );
+  }
 }
 
 // ─── Service-level orchestration ────────────────────────────────────────────

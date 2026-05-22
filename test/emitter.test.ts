@@ -610,6 +610,30 @@ describe("emitter", () => {
     ok(content.includes("<PackageTags>refit petstore api</PackageTags>"), "Expected PackageTags");
   });
 
+  it("emits </PropertyGroup> at 2-space indent matching <PropertyGroup>", async () => {
+    const results = await emit(
+      `
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `,
+      { "nuget-version": "1.0.0" }
+    );
+
+    const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
+    ok(csproj, "Expected .csproj");
+    const content = results[csproj];
+    ok(content.includes("  </PropertyGroup>"), "Expected 2-space-indented </PropertyGroup>");
+    ok(!content.includes("    </PropertyGroup>"), "Should not have 4-space-indented </PropertyGroup>");
+  });
+
   it("does not emit NuGet title when neither client-name nor nuget-title is set", async () => {
     const results = await emit(`
       import "@typespec/http";

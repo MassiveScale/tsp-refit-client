@@ -11,6 +11,7 @@ export interface EmitterOptions {
   "version-in-namespace"?: boolean;
   "emit-project-file"?: boolean;
   "overwrite-project-file"?: boolean;
+  "dotnet-format"?: boolean;
   "nuget-package-id"?: string;
   "nuget-version"?: string;
   "nuget-authors"?: string;
@@ -73,6 +74,12 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
       type: "boolean",
       description:
         "When false (default), the .csproj is only written if it does not already exist. Set to true to always overwrite it.",
+      nullable: true,
+    },
+    "dotnet-format": {
+      type: "boolean",
+      description:
+        "When true (default), run 'dotnet format' on the output directory after emitting. Set to false to skip formatting.",
       nullable: true,
     },
     "nuget-package-id": {
@@ -143,6 +150,12 @@ export const $lib = createTypeSpecLibrary({
       severity: "error",
       messages: {
         default: paramMessage`Version "${"version"}" was not found. Available versions: ${"available"}.`,
+      },
+    },
+    "dotnet-format-failed": {
+      severity: "warning",
+      messages: {
+        default: paramMessage`dotnet format failed: ${"message"}`,
       },
     },
   },

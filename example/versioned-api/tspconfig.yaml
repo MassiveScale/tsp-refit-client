@@ -3,3 +3,4 @@ emit:
 options:
   "@massivescale/tsp-refit-client":
     emitter-output-dir: "{output-dir}/defaults"
+    overwrite-project-file: true

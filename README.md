@@ -30,24 +30,25 @@ options:
 
 ### Emitter options
 
-| Option                   | Type      | Default                                      | Description |
-| ------------------------ | --------- | -------------------------------------------- | ----------- |
-| `project-name`           | `string`  | TypeSpec namespace + `Client`                | Full project name for the `.csproj` filename (e.g. `PetStoreClient` → `PetStoreClient.csproj`). Dots are valid; C# identifiers use only the final segment. |
-| `client-name`            | `string`  | Derived from `project-name`                  | Display name for the client. Controls the DI extension class/method prefix (e.g. `PetStore` → `PetStoreExtensions.g.cs`, `AddPetStore(...)`). Also used as the default NuGet `<Title>` unless `nuget-title` is set. |
-| `root-namespace`         | `string`  | TypeSpec namespace + `.Client`               | Overrides the root C# namespace for all generated files. |
-| `net-version`            | `string`  | `net8.0`                                     | Target .NET version written into the `.csproj`. |
-| `target-version`         | `string`  | Latest declared version                      | Emit only this API version. Ignored when `all-versions` is `true`. |
-| `all-versions`           | `boolean` | `false`                                      | When `true`, generate clients for every declared API version in separate subfolders. |
-| `version-in-namespace`   | `boolean` | `false`                                      | When `true`, append the sanitized API version to the C# namespace in single-version mode. Has no effect when `all-versions` is `true`. |
-| `emit-project-file`      | `boolean` | `true`                                       | Set to `false` to skip `.csproj` generation. |
-| `overwrite-project-file` | `boolean` | `false`                                      | When `false`, the `.csproj` is only written if it does not already exist. |
-| `nuget-package-id`       | `string`  | —                                            | NuGet `<PackageId>`. |
-| `nuget-version`          | `string`  | —                                            | NuGet `<Version>`. |
-| `nuget-authors`          | `string`  | —                                            | NuGet `<Authors>` (comma-separated). |
-| `nuget-description`      | `string`  | `Refit client for the {namespace} API`       | NuGet `<Description>`. |
-| `nuget-title`            | `string`  | Value of `client-name` (if set), else omitted | NuGet `<Title>`. |
-| `nuget-tags`             | `string`  | —                                            | NuGet `<PackageTags>` (space-separated). |
-| `templates`              | `object`  | —                                            | Override individual built-in Handlebars templates. Keys: `file`, `record`, `enum`, `refit-interface`, `csproj`, `extensions`. |
+| Option                   | Type      | Default                                       | Description                                                                                                                                                                                                         |
+| ------------------------ | --------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `project-name`           | `string`  | TypeSpec namespace + `Client`                 | Full project name for the `.csproj` filename (e.g. `PetStoreClient` → `PetStoreClient.csproj`). Dots are valid; C# identifiers use only the final segment.                                                          |
+| `client-name`            | `string`  | Derived from `project-name`                   | Display name for the client. Controls the DI extension class/method prefix (e.g. `PetStore` → `PetStoreExtensions.g.cs`, `AddPetStore(...)`). Also used as the default NuGet `<Title>` unless `nuget-title` is set. |
+| `root-namespace`         | `string`  | TypeSpec namespace + `.Client`                | Overrides the root C# namespace for all generated files.                                                                                                                                                            |
+| `net-version`            | `string`  | `net8.0`                                      | Target .NET version written into the `.csproj`.                                                                                                                                                                     |
+| `target-version`         | `string`  | Latest declared version                       | Emit only this API version. Ignored when `all-versions` is `true`.                                                                                                                                                  |
+| `all-versions`           | `boolean` | `false`                                       | When `true`, generate clients for every declared API version in separate subfolders.                                                                                                                                |
+| `version-in-namespace`   | `boolean` | `false`                                       | When `true`, append the sanitized API version to the C# namespace in single-version mode. Has no effect when `all-versions` is `true`.                                                                              |
+| `emit-project-file`      | `boolean` | `true`                                        | Set to `false` to skip `.csproj` generation.                                                                                                                                                                        |
+| `overwrite-project-file` | `boolean` | `false`                                       | When `false`, the `.csproj` is only written if it does not already exist.                                                                                                                                           |
+| `dotnet-format`          | `boolean` | `true`                                        | When `true`, run `dotnet format --no-restore` on the output directory after emitting. Set to `false` to skip formatting (e.g. in CI pipelines where formatting is handled separately).                              |
+| `nuget-package-id`       | `string`  | —                                             | NuGet `<PackageId>`.                                                                                                                                                                                                |
+| `nuget-version`          | `string`  | —                                             | NuGet `<Version>`.                                                                                                                                                                                                  |
+| `nuget-authors`          | `string`  | —                                             | NuGet `<Authors>` (comma-separated).                                                                                                                                                                                |
+| `nuget-description`      | `string`  | `Refit client for the {namespace} API`        | NuGet `<Description>`.                                                                                                                                                                                              |
+| `nuget-title`            | `string`  | Value of `client-name` (if set), else omitted | NuGet `<Title>`.                                                                                                                                                                                                    |
+| `nuget-tags`             | `string`  | —                                             | NuGet `<PackageTags>` (space-separated).                                                                                                                                                                            |
+| `templates`              | `object`  | —                                             | Override individual built-in Handlebars templates. Keys: `file`, `record`, `enum`, `refit-interface`, `csproj`, `extensions`.                                                                                       |
 
 Then compile your TypeSpec definition:
 
