@@ -179,6 +179,14 @@ function createHandlebarsEnv(): typeof Handlebars {
       .join("\n");
   });
 
+  // Splits doc text on newlines and rejoins with `\n{prefix}` so that every
+  // continuation line in a /// <summary> block gets the correct leading prefix.
+  env.registerHelper("docLines", (doc: unknown, prefix: unknown) => {
+    if (typeof doc !== "string" || !doc) return "";
+    const sep = typeof prefix === "string" ? `\n${prefix}` : "\n/// ";
+    return doc.split("\n").join(sep);
+  });
+
   env.registerHelper("isDefined", (value: unknown) => value !== undefined);
 
   env.registerHelper("eq", (a: unknown, b: unknown) => a === b);
@@ -208,7 +216,9 @@ function renderMethodBlock(m: MethodView): string {
   const lines: string[] = [];
   if (m.doc) {
     lines.push(`    /// <summary>`);
-    lines.push(`    /// ${m.doc}`);
+    for (const docLine of m.doc.split("\n")) {
+      lines.push(`    /// ${docLine}`);
+    }
     lines.push(`    /// </summary>`);
   }
   lines.push(`    [${m.verb}("${m.path}")]`);

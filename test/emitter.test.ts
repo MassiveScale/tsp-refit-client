@@ -797,4 +797,90 @@ describe("emitter", () => {
     ok(csproj, "Expected .csproj");
     ok(results[csproj].includes("<Version>3.2.0</Version>"), "Expected latest version semver with all-versions");
   });
+
+  // ─── Multi-line doc comment rendering ────────────────────────────────────────
+
+  it("emits all lines of a multi-line model doc with /// prefix", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @doc("First line.\\nSecond line.")
+      model Widget {
+        @doc("Prop first.\\nProp second.")
+        name: string;
+      }
+
+      @route("/widgets")
+      interface Widgets {
+        @get list(): Widget[];
+      }
+    `);
+
+    const modelFile = Object.keys(results).find((k) => k.endsWith("Widget.g.cs"));
+    ok(modelFile, "Expected Widget.g.cs");
+    const content = results[modelFile];
+    ok(content.includes("/// First line."), "Expected first doc line on record");
+    ok(content.includes("/// Second line."), "Expected second doc line on record");
+    ok(!content.includes("Second line.") || content.split("/// Second line.").length >= 2,
+      "Second line must always start with ///");
+    ok(content.includes("/// Prop first."), "Expected first doc line on property");
+    ok(content.includes("/// Prop second."), "Expected second doc line on property");
+  });
+
+  it("emits all lines of a multi-line enum doc with /// prefix", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @doc("Enum first.\\nEnum second.")
+      enum Status {
+        @doc("Member first.\\nMember second.")
+        Active: "active",
+      }
+
+      model Item { status: Status; }
+
+      @route("/items")
+      interface Items {
+        @get list(): Item[];
+      }
+    `);
+
+    const enumFile = Object.keys(results).find((k) => k.endsWith("Status.g.cs"));
+    ok(enumFile, "Expected Status.g.cs");
+    const content = results[enumFile];
+    ok(content.includes("/// Enum first."), "Expected first enum doc line");
+    ok(content.includes("/// Enum second."), "Expected second enum doc line");
+    ok(content.includes("/// Member first."), "Expected first member doc line");
+    ok(content.includes("/// Member second."), "Expected second member doc line");
+  });
+
+  it("emits all lines of a multi-line operation doc with /// prefix", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @doc("Op first.\\nOp second.")
+        @get list(): string[];
+      }
+    `);
+
+    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    ok(ifaceFile, "Expected IItems.g.cs");
+    const content = results[ifaceFile];
+    ok(content.includes("/// Op first."), "Expected first op doc line");
+    ok(content.includes("/// Op second."), "Expected second op doc line");
+  });
 });

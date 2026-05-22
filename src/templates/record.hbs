@@ -32,12 +32,12 @@
 
 --}}
 /// <summary>
-{{#if doc}}/// {{doc}}
+{{#if doc}}/// {{docLines doc "/// "}}
 {{/if}}/// </summary>
 public record {{recordName}}{{genericSuffix}}
 {
 {{#each properties}}{{#if doc}}    /// <summary>
-    /// {{doc}}
+    /// {{docLines doc "    /// "}}
     /// </summary>
 {{/if}}    public {{type}} {{name}} { get; init; }{{#if defaultValue}} = {{defaultValue}};{{/if}}
 {{/each}}

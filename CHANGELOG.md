@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Multi-line doc comments (TypeSpec `/** ... */` blocks) now emit a `/// ` prefix on every line. Previously, only the first line received the prefix, producing invalid C# for models, enums, interfaces, and operations.
+
 ## [1.1.0-beta.2] - 2026-05-21
 
 ### Changed
