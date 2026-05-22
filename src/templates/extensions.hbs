@@ -1,6 +1,9 @@
 {{!--
-  extensions.hbs — generates a static extension class that registers all Refit
-  interfaces for one API version with ASP.NET Core's DI container.
+  extensions.hbs — generates two top-level declarations in one file:
+    1. A concrete `{clientClassName}` class that exposes each Refit interface
+       as a named property (e.g. `client.Pets.ListAsync(ct)`).
+    2. A static `{className}` extension class that registers all Refit interfaces
+       and the aggregate client with ASP.NET Core's DI container.
 
   Override via tspconfig.yaml:
     options:
@@ -10,12 +13,16 @@
 
   ── Template variables ──────────────────────────────────────────────────────
 
-  {{className}}   — name of the generated static class, e.g. "ApiClientExtensions"
+  {{clientClassName}} — name of the aggregate client class, e.g. "ApiClient"
 
-  {{methodName}}  — name of the public registration method, e.g. "AddApiClient"
+  {{className}}       — name of the static extensions class, e.g. "ApiClientExtensions"
 
-  {{interfaces}}  — array of Refit interface names to register, e.g.
-                    ["ICustomers", "IPets", "IStores"]
+  {{methodName}}      — name of the public registration method, e.g. "AddApiClient"
+
+  {{interfaces}}      — array of interface entry objects. Each has:
+    .name             —   C# interface name, e.g. "IPets"
+    .propertyName     —   property name on the aggregate client, e.g. "Pets"
+    .paramName        —   constructor parameter name, e.g. "pets"
 
   ── Usage example ────────────────────────────────────────────────────────────
 
@@ -24,10 +31,12 @@
       c.BaseAddress = new Uri("https://api.example.com");
   });
 
-  // With a delegating handler:
-  builder.Services.AddApiClient(
-      c => c.BaseAddress = new Uri("https://api.example.com"),
-      b => b.AddHttpMessageHandler<AuthHandler>());
+  // Inject and call:
+  public class MyService(ApiClient api)
+  {
+      public Task DoSomethingAsync(CancellationToken ct) =>
+          api.Pets.ListAsync(ct);
+  }
 
   ── Built-in helpers ────────────────────────────────────────────────────────
 
@@ -35,12 +44,33 @@
 
 --}}
 /// <summary>
-/// Provides extension methods to register all generated Refit interfaces with the DI container.
+/// Unified client providing access to all API endpoints.
+/// </summary>
+/// <remarks>
+/// Inject this class directly and call methods through its named endpoint properties,
+/// e.g. <c>client.Pets.ListAsync(ct)</c>.
+/// </remarks>
+public class {{clientClassName}}
+{
+{{#each interfaces}}    /// <summary>Gets the <see cref="{{name}}"/> client.</summary>
+    public {{name}} {{propertyName}} { get; }
+{{/each}}
+    /// <summary>
+    /// Initializes a new instance of <see cref="{{clientClassName}}"/>.
+    /// </summary>
+    public {{clientClassName}}({{#each interfaces}}{{name}} {{paramName}}{{#unless @last}}, {{/unless}}{{/each}})
+    {
+{{#each interfaces}}        {{propertyName}} = {{paramName}};
+{{/each}}    }
+}
+
+/// <summary>
+/// Extension methods to register the <see cref="{{clientClassName}}"/> with the DI container.
 /// </summary>
 public static class {{className}}
 {
     /// <summary>
-    /// Registers all generated Refit clients for this API version with the DI container.
+    /// Registers all Refit interfaces and the <see cref="{{clientClassName}}"/> aggregate client with the DI container.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configureHttpClient">Configures the underlying <see cref="HttpClient"/> for every interface (e.g. set <c>BaseAddress</c>).</param>
@@ -53,8 +83,9 @@ public static class {{className}}
         Action<HttpClient> configureHttpClient,
         Func<IHttpClientBuilder, IHttpClientBuilder>? configureBuilder = null)
     {
-{{#each interfaces}}        AddSingleClient<{{this}}>(services, configureHttpClient, configureBuilder);
-{{/each}}        return services;
+{{#each interfaces}}        AddSingleClient<{{name}}>(services, configureHttpClient, configureBuilder);
+{{/each}}        services.AddTransient<{{clientClassName}}>();
+        return services;
     }
 
     private static void AddSingleClient<T>(

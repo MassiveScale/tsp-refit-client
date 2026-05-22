@@ -114,14 +114,26 @@ export interface FileView {
   fileName: string;
 }
 
-/** View model for the generated DI registration extension class. */
+/** One Refit interface entry used in the aggregate client and DI registration. */
+export interface InterfaceEntry {
+  /** C# interface name, e.g. `"IStores"`. */
+  name: string;
+  /** Property name on the aggregate client class, e.g. `"Stores"`. */
+  propertyName: string;
+  /** Constructor parameter name, e.g. `"stores"`. */
+  paramName: string;
+}
+
+/** View model for the generated aggregate client class and DI registration extension class. */
 export interface ExtensionsView {
-  /** Name of the static class, e.g. `"ApiClientExtensions"`. */
+  /** Name of the static extensions class, e.g. `"ApiClientExtensions"`. */
   className: string;
   /** Name of the public extension method, e.g. `"AddApiClient"`. */
   methodName: string;
-  /** Ordered list of Refit interface names to register, e.g. `["ICustomers", "IPets"]`. */
-  interfaces: string[];
+  /** Name of the aggregate client class, e.g. `"ApiClient"`. */
+  clientClassName: string;
+  /** Ordered list of Refit interface entries. */
+  interfaces: InterfaceEntry[];
 }
 
 /** View model for the generated `.csproj` project file. */

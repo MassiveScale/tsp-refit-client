@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `dotnet-format` emitter option (default `true`): when `true`, runs `dotnet format --no-restore` on the output directory after all files are written. Set to `false` to skip formatting. A `warning` diagnostic is reported if `dotnet format` is invoked but exits with a non-zero code.
+- Aggregate client class: the extensions file now also emits a concrete `{ClientName}` class (e.g. `ApiClient`) with one strongly-typed property per TypeSpec `interface`. Callers inject the single class and call `client.Pets.ListAsync(ct)` rather than injecting each Refit interface separately. The `AddXxx(...)` extension method registers all individual Refit interfaces and the aggregate client as a transient service.
 
 ### Fixed
 - Multi-line doc comments (TypeSpec `/** ... */` blocks) now emit a `/// ` prefix on every line. Previously, only the first line received the prefix, producing invalid C# for models, enums, interfaces, and operations.

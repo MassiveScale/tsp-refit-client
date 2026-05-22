@@ -48,6 +48,7 @@ import {
   FileView,
   CsprojView,
   ExtensionsView,
+  InterfaceEntry,
   TemplateOverrides,
 } from "./renderer.js";
 import { EmitterOptions, createDiagnostic } from "./lib.js";
@@ -787,7 +788,13 @@ function buildExtensions(
 ): string {
   const className = `${serviceName}Extensions`;
   const methodName = `Add${serviceName}`;
-  const view: ExtensionsView = { className, methodName, interfaces: interfaceNames };
+  const clientClassName = serviceName;
+  const interfaces: InterfaceEntry[] = interfaceNames.map((name) => {
+    const propertyName = name.startsWith("I") ? name.slice(1) : name;
+    const paramName = propertyName.charAt(0).toLowerCase() + propertyName.slice(1);
+    return { name, propertyName, paramName };
+  });
+  const view: ExtensionsView = { className, methodName, clientClassName, interfaces };
   const body = renderer.renderExtensions(view);
   const fileView: FileView = {
     namespace: csNs,

@@ -106,15 +106,20 @@ builder.Services.AddApiClient(
 
 ### 3. Inject and call
 
-The Refit interfaces are registered as transient services and can be injected directly:
+Inject the single aggregate client and access each endpoint group as a named property:
 
 ```csharp
-public class ProductService(IItems items)
+public class ProductService(ApiClient api)
 {
-    public Task<List<string>> GetAllAsync(CancellationToken ct) =>
-        items.ListAsync(ct);
+    public Task<List<Item>> GetAllAsync(CancellationToken ct) =>
+        api.Items.ListAsync(ct);
+
+    public Task<Item> CreateAsync(ItemCreateRequest body, CancellationToken ct) =>
+        api.Items.CreateAsync(body, ct);
 }
 ```
+
+The aggregate client (`ApiClient` by default, or the name derived from `client-name`/`project-name`) exposes one strongly-typed property per TypeSpec `interface` in your spec.
 
 ## Development
 
