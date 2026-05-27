@@ -44,7 +44,8 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
     },
     "net-version": {
       type: "string",
-      description: "Target .NET version for the generated project file. Defaults to 'net8.0'.",
+      description:
+        "Target .NET version(s) for the generated project file. Use a single TFM (e.g. 'net8.0') or a semicolon-separated list for multi-targeting (e.g. 'net8.0;net9.0'). Defaults to 'net8.0'.",
       nullable: true,
     },
     "target-version": {

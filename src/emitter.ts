@@ -186,7 +186,10 @@ async function emitService(
     : projectName;
   const clientName = options["client-name"] ?? csharpName;
   const baseNs = options["root-namespace"] ?? `${nsFullName}.Client`;
-  const netVersion = options["net-version"] ?? "net8.0";
+  const rawNetVersion = options["net-version"] ?? "net8.0";
+  const netVersionParts = rawNetVersion.split(";").map((v) => v.trim()).filter(Boolean);
+  const netVersion = netVersionParts.join(";");
+  const isMultiTarget = netVersionParts.length > 1;
 
   const nugetDescription = options["nuget-description"] ?? `Refit client for the ${baseNs} API`;
   const nugetTitle = options["nuget-title"] ?? (options["client-name"] !== undefined ? clientName : undefined);
@@ -277,7 +280,7 @@ async function emitService(
       await writeFile(
         program,
         csprojPath,
-        buildCsproj(baseNs, netVersion, deriveNugetVersion(allVersions, options), nugetDescription, nugetTitle, options, renderer)
+        buildCsproj(baseNs, netVersion, isMultiTarget, deriveNugetVersion(allVersions, options), nugetDescription, nugetTitle, options, renderer)
       );
     }
   }
@@ -771,6 +774,7 @@ function buildEnum(e: Enum, csNs: string, program: Program, renderer: Renderer):
 function buildCsproj(
   rootNs: string,
   netVersion: string,
+  isMultiTarget: boolean,
   nugetVersion: string,
   nugetDescription: string,
   nugetTitle: string | undefined,
@@ -780,6 +784,7 @@ function buildCsproj(
   const view: CsprojView = {
     rootNamespace: rootNs,
     netVersion,
+    isMultiTarget,
     nugetDescription,
     nugetTitle,
     nugetPackageId: options["nuget-package-id"],

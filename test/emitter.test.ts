@@ -153,7 +153,59 @@ describe("emitter", () => {
     ok(csproj, "Expected .csproj file");
     const content = results[csproj];
     ok(content.includes("<PackageReference Include=\"Refit\""), "Expected Refit reference");
-    ok(content.includes("net8.0"), "Expected net8.0 target");
+    ok(content.includes("<TargetFramework>net8.0</TargetFramework>"), "Expected singular TargetFramework for default");
+  });
+
+  it("emits TargetFrameworks (plural) when net-version contains multiple TFMs", async () => {
+    const results = await emit(
+      `
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `,
+      { "net-version": "net8.0;net9.0" }
+    );
+
+    const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
+    ok(csproj, "Expected .csproj file");
+    const content = results[csproj];
+    ok(
+      content.includes("<TargetFrameworks>net8.0;net9.0</TargetFrameworks>"),
+      "Expected plural TargetFrameworks for multi-target"
+    );
+    ok(!content.includes("<TargetFramework>"), "Should not use singular TargetFramework in multi-target mode");
+  });
+
+  it("trims whitespace around semicolons in net-version", async () => {
+    const results = await emit(
+      `
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `,
+      { "net-version": "net8.0 ; net9.0" }
+    );
+
+    const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
+    ok(csproj, "Expected .csproj file");
+    ok(
+      results[csproj].includes("<TargetFrameworks>net8.0;net9.0</TargetFrameworks>"),
+      "Expected whitespace trimmed from TFMs"
+    );
   });
 
   it("defaults to emitting only the latest version for a versioned API", async () => {

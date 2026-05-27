@@ -140,8 +140,13 @@ export interface ExtensionsView {
 export interface CsprojView {
   /** C# root namespace. */
   rootNamespace: string;
-  /** Target framework moniker, e.g. `"net8.0"`. */
+  /**
+   * Target framework moniker(s). Single: `"net8.0"`. Multi-target: `"net8.0;net9.0"`.
+   * Use together with {@link isMultiTarget} to choose the correct MSBuild element.
+   */
   netVersion: string;
+  /** `true` when `netVersion` contains multiple TFMs; drives `<TargetFrameworks>` vs `<TargetFramework>`. */
+  isMultiTarget: boolean;
   /** NuGet `<Description>`. Always present; defaults to a generated string when not supplied. */
   nugetDescription: string;
   /** NuGet `<PackageId>`. Omitted from the project file when undefined. */

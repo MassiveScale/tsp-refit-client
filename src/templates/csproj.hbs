@@ -10,7 +10,8 @@
   ── Template variables ──────────────────────────────────────────────────────
 
   {{rootNamespace}}     — C# root namespace, e.g. "Acme.Api.Client"
-  {{netVersion}}        — Target framework moniker, e.g. "net8.0"
+  {{netVersion}}        — Target framework moniker(s). Single: "net8.0". Multi: "net8.0;net9.0"
+  {{isMultiTarget}}     — true when netVersion contains multiple TFMs
   {{nugetDescription}}  — NuGet <Description> (always present)
   {{nugetPackageId}}    — NuGet <PackageId> (optional)
   {{nugetVersion}}      — NuGet <Version> (optional)
@@ -32,7 +33,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>{{{netVersion}}}</TargetFramework>
+    {{#if isMultiTarget}}<TargetFrameworks>{{{netVersion}}}</TargetFrameworks>{{else}}<TargetFramework>{{{netVersion}}}</TargetFramework>{{/if}}
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
