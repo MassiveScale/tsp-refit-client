@@ -4,11 +4,9 @@
 
 ## Summary
 
-This emitter produces a C# project with Refit-capable interfaces for each `GET`, `POST`, `PATCH`, and `DELETE` operation in your TypeSpec definition. The generated client contains everything needed to call your APIs — simply provide the base URI at runtime.
+This emitter produces a C# project with Refit-capable interfaces for each `GET`, `POST`, `PUT`, `PATCH`, and `DELETE` operation in your TypeSpec definition. The generated client contains everything needed to call your APIs — simply provide the base URI at runtime.
 
 It is also version-aware, allowing you to call any endpoint version from a single client.
-
-> **Status:** Early development. Core C# code generation is implemented; some edge cases and advanced TypeSpec features may not yet be handled.
 
 ## Usage
 
@@ -35,7 +33,7 @@ options:
 | `project-name`           | `string`  | TypeSpec namespace + `Client`                 | Full project name for the `.csproj` filename (e.g. `PetStoreClient` → `PetStoreClient.csproj`). Dots are valid; C# identifiers use only the final segment.                                                          |
 | `client-name`            | `string`  | Derived from `project-name`                   | Display name for the client. Controls the DI extension class/method prefix (e.g. `PetStore` → `PetStoreExtensions.g.cs`, `AddPetStore(...)`). Also used as the default NuGet `<Title>` unless `nuget-title` is set. |
 | `root-namespace`         | `string`  | TypeSpec namespace + `.Client`                | Overrides the root C# namespace for all generated files.                                                                                                                                                            |
-| `net-version`            | `string`  | `net8.0`                                      | Target .NET version(s) written into the `.csproj`. Use a single TFM (e.g. `net8.0`) or a semicolon-separated list for multi-targeting (e.g. `net8.0;net9.0`).                                                      |
+| `net-version`            | `string`  | `net8.0`                                      | Target .NET version(s) written into the `.csproj`. Use a single TFM (e.g. `net8.0`) or a semicolon-separated list for multi-targeting (e.g. `net8.0;net9.0`).                                                       |
 | `target-version`         | `string`  | Latest declared version                       | Emit only this API version. Ignored when `all-versions` is `true`.                                                                                                                                                  |
 | `all-versions`           | `boolean` | `false`                                       | When `true`, generate clients for every declared API version in separate subfolders.                                                                                                                                |
 | `version-in-namespace`   | `boolean` | `false`                                       | When `true`, append the sanitized API version to the C# namespace in single-version mode. Has no effect when `all-versions` is `true`.                                                                              |
@@ -43,7 +41,7 @@ options:
 | `overwrite-project-file` | `boolean` | `false`                                       | When `false`, the `.csproj` is only written if it does not already exist.                                                                                                                                           |
 | `dotnet-format`          | `boolean` | `true`                                        | When `true`, run `dotnet format --no-restore` on the output directory after emitting. Set to `false` to skip formatting (e.g. in CI pipelines where formatting is handled separately).                              |
 | `nuget-package-id`       | `string`  | —                                             | NuGet `<PackageId>`.                                                                                                                                                                                                |
-| `nuget-version`          | `string`  | —                                             | NuGet `<Version>`.                                                                                                                                                                                                  |
+| `nuget-version`          | `string`  | Auto-derived from TypeSpec version            | NuGet `<Version>`. When not set, derived from the targeted TypeSpec API version: parsed as semver if possible (e.g. `v2.1` → `2.1.0`), otherwise formatted as CalVer (`YYYY.MM.DD`).                                |
 | `nuget-authors`          | `string`  | —                                             | NuGet `<Authors>` (comma-separated).                                                                                                                                                                                |
 | `nuget-description`      | `string`  | `Refit client for the {namespace} API`        | NuGet `<Description>`.                                                                                                                                                                                              |
 | `nuget-title`            | `string`  | Value of `client-name` (if set), else omitted | NuGet `<Title>`.                                                                                                                                                                                                    |
@@ -183,7 +181,7 @@ npm run format:check  # check formatting without writing
 
 ## Example
 
-The [`example/versioned-api/`](example/versioned-api/) directory contains a versioned Pet Store TypeSpec API demonstrating multi-version route and model definitions. Once the emitter is functional, run the example builds via:
+The [`example/versioned-api/`](example/versioned-api/) directory contains a versioned Pet Store TypeSpec API demonstrating multi-version route and model definitions. Run the example builds via:
 
 ```powershell
 ./example/versioned-api/build.ps1

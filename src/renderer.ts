@@ -14,13 +14,22 @@ import { fileURLToPath } from "node:url";
 import Handlebars from "handlebars";
 
 /** Absolute path to the bundled default templates directory. */
-const TEMPLATES_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../templates");
+const TEMPLATES_DIR = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../templates",
+);
 
 /**
  * Names of the built-in Handlebars templates.
  * Each name maps to a `<name>.hbs` file inside {@link TEMPLATES_DIR}.
  */
-export type TemplateName = "file" | "record" | "enum" | "refit-interface" | "csproj" | "extensions";
+export type TemplateName =
+  | "file"
+  | "record"
+  | "enum"
+  | "refit-interface"
+  | "csproj"
+  | "extensions";
 
 /**
  * Partial map of template names to absolute file paths used to override the
@@ -211,7 +220,10 @@ function createHandlebarsEnv(): typeof Handlebars {
   return env;
 }
 
-function compileTemplate(env: typeof Handlebars, source: string): HandlebarsTemplateDelegate {
+function compileTemplate(
+  env: typeof Handlebars,
+  source: string,
+): HandlebarsTemplateDelegate {
   return env.compile(source, { noEscape: true });
 }
 
@@ -261,9 +273,17 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
   const fileTemplate = loadTemplate(env, "file", overrides.file);
   const recordTemplate = loadTemplate(env, "record", overrides.record);
   const enumTemplate = loadTemplate(env, "enum", overrides.enum);
-  const refitInterfaceTemplate = loadTemplate(env, "refit-interface", overrides["refit-interface"]);
+  const refitInterfaceTemplate = loadTemplate(
+    env,
+    "refit-interface",
+    overrides["refit-interface"],
+  );
   const csprojTemplate = loadTemplate(env, "csproj", overrides.csproj);
-  const extensionsTemplate = loadTemplate(env, "extensions", overrides.extensions);
+  const extensionsTemplate = loadTemplate(
+    env,
+    "extensions",
+    overrides.extensions,
+  );
 
   return {
     renderFile(view) {
@@ -281,10 +301,12 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
     renderRefitInterface(view) {
       const methodBlocks = view.methods.map(renderMethodBlock);
       const methodsBlock =
-        methodBlocks.length > 0
-          ? methodBlocks.join("\n\n") + "\n"
-          : "";
-      return refitInterfaceTemplate({ interfaceName: view.interfaceName, doc: view.doc, methodsBlock });
+        methodBlocks.length > 0 ? methodBlocks.join("\n\n") + "\n" : "";
+      return refitInterfaceTemplate({
+        interfaceName: view.interfaceName,
+        doc: view.doc,
+        methodsBlock,
+      });
     },
 
     renderCsproj(view) {
