@@ -8,35 +8,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0-beta.5] - 2026-05-27
 
 ### Added
+
 - `net-version` now accepts a semicolon-separated list of Target Framework Monikers for multi-targeting (e.g. `"net8.0;net9.0"`). Single-target configs are unchanged; multi-target configs emit `<TargetFrameworks>` (plural) instead of `<TargetFramework>`.
 
 ## [1.0.0-beta.4] - 2026-05-22
 
 ### Added
+
 - Optional (`?`) path, query, and header parameters are now emitted as nullable C# types with `= null` defaults (e.g. `@query skip?: int32` → `int? skip = null`). Optional parameters are always placed after required ones in the method signature to keep generated C# valid.
 
 ## [1.0.0-beta.3] - 2026-05-22
 
 ### Added
+
 - `dotnet-format` emitter option (default `true`): when `true`, runs `dotnet format --no-restore` on the output directory after all files are written. Set to `false` to skip formatting. A `warning` diagnostic is reported if `dotnet format` is invoked but exits with a non-zero code.
 - Aggregate client class: the extensions file now also emits a concrete `{ClientName}` class (e.g. `ApiClient`) with one strongly-typed property per TypeSpec `interface`. Callers inject the single class and call `client.Pets.ListAsync(ct)` rather than injecting each Refit interface separately. The `AddXxx(...)` extension method registers all individual Refit interfaces and the aggregate client as a transient service.
 
 ### Fixed
+
 - Multi-line doc comments (TypeSpec `/** ... */` blocks) now emit a `/// ` prefix on every line. Previously, only the first line received the prefix, producing invalid C# for models, enums, interfaces, and operations.
 - The closing `</PropertyGroup>` in the generated `.csproj` now aligns at 2-space indent, matching its opening tag. Previously, trailing whitespace from the last conditional NuGet property block caused it to be indented at 4 spaces.
 
 ## [1.0.0-beta.2] - 2026-05-21
 
 ### Changed
+
 - All generated C# source files now use the `.g.cs` extension instead of `.cs`, following the .NET source-generator convention for auto-generated code.
 - All `.g.cs` files in the emitter output directory are deleted before each emit run, preventing stale generated files from accumulating across regenerations.
 - All top-level generated C# types (records, enums, interfaces, extension classes) now always include a `/// <summary>` XML doc block, with the opening and closing tags on their own lines. Previously the comment was only emitted when a `@doc` annotation was present on the TypeSpec type.
 - Method-level XML doc comments in Refit interfaces now use the same multi-line `<summary>` format.
 
 ### Added
+
 - `project-name` emitter option: overrides the full project name used for the `.csproj` filename and DI extension class (e.g. `project-name: PetStoreClient` → `PetStoreClient.csproj`, `PetStoreClientExtensions.cs`, `AddPetStoreClient(...)`). Defaults to the full TypeSpec namespace + `Client` suffix (e.g. namespace `My.Api` → `My.ApiClient`). Dots are valid in the project name; the C# class identifier uses only the final dot-separated segment.
 - `client-name` emitter option: the display name for the client. Used as the DI extension class/method prefix (e.g. `client-name: PetStore` → `PetStoreExtensions.g.cs`, `AddPetStore(...)`). Also used as the default NuGet `<Title>` unless `nuget-title` is explicitly set.
-- NuGet package property options: `nuget-package-id`, `nuget-version`, `nuget-authors`, `nuget-description`, `nuget-title`, `nuget-tags`. All are optional; when omitted the corresponding `<PropertyGroup>` element is not emitted (except `<Description>`, which defaults to `Refit client for the {namespace} API`).
+- NuGet package property options: `nuget-package-id`, `nuget-version`, `nuget-authors`, `nuget-description`, `nuget-title`, `nuget-tags`. All are optional. When omitted, `<PackageId>`, `<Authors>`, `<Title>`, and `<PackageTags>` are not emitted; `<Description>` defaults to `Refit client for the {namespace} API`; `<Version>` is auto-derived from the targeted TypeSpec API version (semver if parseable, otherwise CalVer `YYYY.MM.DD`).
 - `version-in-namespace` emitter option (default `false`): when `true`, appends the sanitized API version to the C# namespace in single-version mode (e.g. `MyApi.Client.V2_0`). Ignored when `all-versions` is `true` — versions are always appended in that mode to keep namespaces distinct.
 - `prepare` script added to `package.json` so the package builds automatically when installed directly from GitHub.
 - Refit interface `@doc` annotations are now surfaced on the generated C# `public interface` declaration.
@@ -44,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0-beta] - 2026-05-20
 
 ### Added
+
 - Initial C# Refit client emitter implementation (`src/emitter.ts`):
   - Generates versioned Refit interfaces (one per TypeSpec `interface` per API version)
   - Generates C# `record` types for all models, flattening inherited base-model properties

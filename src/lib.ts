@@ -1,4 +1,8 @@
-import { createTypeSpecLibrary, JSONSchemaType, paramMessage } from "@typespec/compiler";
+import {
+  createTypeSpecLibrary,
+  JSONSchemaType,
+  paramMessage,
+} from "@typespec/compiler";
 import type { TemplateOverrides } from "./renderer.js";
 
 export interface EmitterOptions {
@@ -39,7 +43,8 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
     },
     "root-namespace": {
       type: "string",
-      description: "Override the root C# namespace. Defaults to the TypeSpec namespace + '.Client'.",
+      description:
+        "Override the root C# namespace. Defaults to the TypeSpec namespace + '.Client'.",
       nullable: true,
     },
     "net-version": {
@@ -68,7 +73,8 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
     },
     "emit-project-file": {
       type: "boolean",
-      description: "When false, the .csproj is not emitted at all. Defaults to true.",
+      description:
+        "When false, the .csproj is not emitted at all. Defaults to true.",
       nullable: true,
     },
     "overwrite-project-file": {
@@ -90,7 +96,8 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
     },
     "nuget-version": {
       type: "string",
-      description: "NuGet <Version>. Omitted when not set.",
+      description:
+        "NuGet <Version>. When not set, auto-derived from the targeted TypeSpec API version: parsed as semver if possible (e.g. 'v2.1' → '2.1.0'), otherwise formatted as CalVer (YYYY.MM.DD).",
       nullable: true,
     },
     "nuget-authors": {
@@ -112,20 +119,42 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
     },
     "nuget-tags": {
       type: "string",
-      description: "NuGet <PackageTags> (space-separated). Omitted when not set.",
+      description:
+        "NuGet <PackageTags> (space-separated). Omitted when not set.",
       nullable: true,
     },
     templates: {
       type: "object",
-      description: "Override built-in Handlebars templates with custom .hbs file paths.",
+      description:
+        "Override built-in Handlebars templates with custom .hbs file paths.",
       additionalProperties: false,
       nullable: true,
       properties: {
-        file: { type: "string", nullable: true, description: "Outer file wrapper template." },
-        record: { type: "string", nullable: true, description: "C# record (model) template." },
-        enum: { type: "string", nullable: true, description: "C# enum template." },
-        "refit-interface": { type: "string", nullable: true, description: "Refit interface template." },
-        csproj: { type: "string", nullable: true, description: ".csproj project file template." },
+        file: {
+          type: "string",
+          nullable: true,
+          description: "Outer file wrapper template.",
+        },
+        record: {
+          type: "string",
+          nullable: true,
+          description: "C# record (model) template.",
+        },
+        enum: {
+          type: "string",
+          nullable: true,
+          description: "C# enum template.",
+        },
+        "refit-interface": {
+          type: "string",
+          nullable: true,
+          description: "Refit interface template.",
+        },
+        csproj: {
+          type: "string",
+          nullable: true,
+          description: ".csproj project file template.",
+        },
         extensions: {
           type: "string",
           nullable: true,

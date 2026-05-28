@@ -23,12 +23,20 @@ describe("emitter", () => {
       }
     `);
 
-    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
-    ok(ifaceFile, "Expected IItems.cs to be emitted");
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
+    ok(ifaceFile, "Expected IItems.g.cs to be emitted");
     const content = results[ifaceFile];
-    ok(content.includes("public interface IItems"), "Expected interface declaration");
+    ok(
+      content.includes("public interface IItems"),
+      "Expected interface declaration",
+    );
     ok(content.includes('[Get("/items")]'), "Expected Get attribute");
-    ok(content.includes("Task<List<string>>"), "Expected Task<List<string>> return type");
+    ok(
+      content.includes("Task<List<string>>"),
+      "Expected Task<List<string>> return type",
+    );
     ok(content.includes("ListAsync("), "Expected ListAsync method");
   });
 
@@ -50,12 +58,17 @@ describe("emitter", () => {
       }
     `);
 
-    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
-    ok(ifaceFile, "Expected IItems.cs");
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
+    ok(ifaceFile, "Expected IItems.g.cs");
     const content = results[ifaceFile];
     ok(content.includes('[Post("/items")]'), "Expected Post attribute");
     ok(content.includes('[Patch("/items/{id}")]'), "Expected Patch attribute");
-    ok(content.includes('[Delete("/items/{id}")]'), "Expected Delete attribute");
+    ok(
+      content.includes('[Delete("/items/{id}")]'),
+      "Expected Delete attribute",
+    );
     ok(content.includes("CreateAsync("), "Expected CreateAsync");
     ok(content.includes("UpdateAsync("), "Expected UpdateAsync");
     ok(content.includes("RemoveAsync("), "Expected RemoveAsync");
@@ -75,9 +88,14 @@ describe("emitter", () => {
       }
     `);
 
-    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
     ok(ifaceFile);
-    ok(results[ifaceFile].includes("Task RemoveAsync("), "Expected bare Task return");
+    ok(
+      results[ifaceFile].includes("Task RemoveAsync("),
+      "Expected bare Task return",
+    );
   });
 
   it("emits path parameters correctly", async () => {
@@ -96,11 +114,16 @@ describe("emitter", () => {
       }
     `);
 
-    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IWidgets.g.cs"));
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IWidgets.g.cs"),
+    );
     ok(ifaceFile);
     const content = results[ifaceFile];
     ok(content.includes("string id"), "Expected string id parameter");
-    ok(content.includes('[Get("/widgets/{id}")]'), "Expected path in attribute");
+    ok(
+      content.includes('[Get("/widgets/{id}")]'),
+      "Expected path in attribute",
+    );
   });
 
   it("emits a model record", async () => {
@@ -124,8 +147,10 @@ describe("emitter", () => {
       }
     `);
 
-    const modelFile = Object.keys(results).find((k) => k.endsWith("Widget.g.cs"));
-    ok(modelFile, "Expected Widget.cs to be emitted");
+    const modelFile = Object.keys(results).find((k) =>
+      k.endsWith("Widget.g.cs"),
+    );
+    ok(modelFile, "Expected Widget.g.cs to be emitted");
     const content = results[modelFile];
     ok(content.includes("public record Widget"), "Expected record declaration");
     ok(content.includes("public string Name"), "Expected Name property");
@@ -152,8 +177,14 @@ describe("emitter", () => {
     const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
     ok(csproj, "Expected .csproj file");
     const content = results[csproj];
-    ok(content.includes("<PackageReference Include=\"Refit\""), "Expected Refit reference");
-    ok(content.includes("<TargetFramework>net8.0</TargetFramework>"), "Expected singular TargetFramework for default");
+    ok(
+      content.includes('<PackageReference Include="Refit"'),
+      "Expected Refit reference",
+    );
+    ok(
+      content.includes("<TargetFramework>net8.0</TargetFramework>"),
+      "Expected singular TargetFramework for default",
+    );
   });
 
   it("emits TargetFrameworks (plural) when net-version contains multiple TFMs", async () => {
@@ -170,7 +201,7 @@ describe("emitter", () => {
         @get list(): string[];
       }
     `,
-      { "net-version": "net8.0;net9.0" }
+      { "net-version": "net8.0;net9.0" },
     );
 
     const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
@@ -178,9 +209,12 @@ describe("emitter", () => {
     const content = results[csproj];
     ok(
       content.includes("<TargetFrameworks>net8.0;net9.0</TargetFrameworks>"),
-      "Expected plural TargetFrameworks for multi-target"
+      "Expected plural TargetFrameworks for multi-target",
     );
-    ok(!content.includes("<TargetFramework>"), "Should not use singular TargetFramework in multi-target mode");
+    ok(
+      !content.includes("<TargetFramework>"),
+      "Should not use singular TargetFramework in multi-target mode",
+    );
   });
 
   it("trims whitespace around semicolons in net-version", async () => {
@@ -197,14 +231,16 @@ describe("emitter", () => {
         @get list(): string[];
       }
     `,
-      { "net-version": "net8.0 ; net9.0" }
+      { "net-version": "net8.0 ; net9.0" },
     );
 
     const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
     ok(csproj, "Expected .csproj file");
     ok(
-      results[csproj].includes("<TargetFrameworks>net8.0;net9.0</TargetFrameworks>"),
-      "Expected whitespace trimmed from TFMs"
+      results[csproj].includes(
+        "<TargetFrameworks>net8.0;net9.0</TargetFrameworks>",
+      ),
+      "Expected whitespace trimmed from TFMs",
     );
   });
 
@@ -231,13 +267,23 @@ describe("emitter", () => {
       }
     `);
 
-    const v1File = Object.keys(results).find((k) => k.includes("v1.0") && k.endsWith("IItems.g.cs"));
-    const iItemsFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    const v1File = Object.keys(results).find(
+      (k) => k.includes("v1.0") && k.endsWith("IItems.g.cs"),
+    );
+    const iItemsFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
 
     ok(!v1File, "v1.0 should not be emitted by default");
-    ok(iItemsFile, "Expected IItems.cs at root (no version folder in single-version mode)");
+    ok(
+      iItemsFile,
+      "Expected IItems.g.cs at root (no version folder in single-version mode)",
+    );
     ok(results[iItemsFile!].includes("ListAsync("), "v2 should have ListAsync");
-    ok(results[iItemsFile!].includes("CreateAsync("), "v2 should have CreateAsync");
+    ok(
+      results[iItemsFile!].includes("CreateAsync("),
+      "v2 should have CreateAsync",
+    );
   });
 
   it("emits a specific version when target-version is set", async () => {
@@ -263,18 +309,27 @@ describe("emitter", () => {
         @post create(@body body: Item): Item;
       }
     `,
-      { "target-version": "v1.0" }
+      { "target-version": "v1.0" },
     );
 
-    const v1File = Object.keys(results).find((k) => k.includes("v1.0") && k.endsWith("IItems.g.cs"));
-    const v2File = Object.keys(results).find((k) => k.includes("v2.0") && k.endsWith("IItems.g.cs"));
-    const iItemsFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    const v1File = Object.keys(results).find(
+      (k) => k.includes("v1.0") && k.endsWith("IItems.g.cs"),
+    );
+    const v2File = Object.keys(results).find(
+      (k) => k.includes("v2.0") && k.endsWith("IItems.g.cs"),
+    );
+    const iItemsFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
 
     ok(!v1File, "No v1.0 folder in single-version mode");
     ok(!v2File, "v2.0 should not be emitted when target-version is v1.0");
-    ok(iItemsFile, "Expected IItems.cs at root");
+    ok(iItemsFile, "Expected IItems.g.cs at root");
     ok(results[iItemsFile!].includes("ListAsync("), "v1 should have ListAsync");
-    ok(!results[iItemsFile!].includes("CreateAsync("), "v1 should not have CreateAsync (added in v2)");
+    ok(
+      !results[iItemsFile!].includes("CreateAsync("),
+      "v1 should not have CreateAsync (added in v2)",
+    );
   });
 
   it("emits all versions when all-versions is true", async () => {
@@ -300,16 +355,23 @@ describe("emitter", () => {
         @post create(@body body: Item): Item;
       }
     `,
-      { "all-versions": true }
+      { "all-versions": true },
     );
 
-    const v1File = Object.keys(results).find((k) => k.includes("v1.0") && k.endsWith("IItems.g.cs"));
-    const v2File = Object.keys(results).find((k) => k.includes("v2.0") && k.endsWith("IItems.g.cs"));
+    const v1File = Object.keys(results).find(
+      (k) => k.includes("v1.0") && k.endsWith("IItems.g.cs"),
+    );
+    const v2File = Object.keys(results).find(
+      (k) => k.includes("v2.0") && k.endsWith("IItems.g.cs"),
+    );
 
-    ok(v1File, "Expected v1.0/IItems.cs");
-    ok(v2File, "Expected v2.0/IItems.cs");
+    ok(v1File, "Expected v1.0/Endpoints/IItems.g.cs");
+    ok(v2File, "Expected v2.0/Endpoints/IItems.g.cs");
     ok(results[v1File].includes("ListAsync("), "v1 should have ListAsync");
-    ok(!results[v1File].includes("CreateAsync("), "v1 should not have CreateAsync");
+    ok(
+      !results[v1File].includes("CreateAsync("),
+      "v1 should not have CreateAsync",
+    );
     ok(results[v2File].includes("ListAsync("), "v2 should have ListAsync");
     ok(results[v2File].includes("CreateAsync("), "v2 should have CreateAsync");
   });
@@ -333,11 +395,13 @@ describe("emitter", () => {
         @get list(): string[];
       }
     `,
-      { "target-version": "v9.0" }
+      { "target-version": "v9.0" },
     );
     ok(
-      diags.some((d) => d.code === "@massivescale/tsp-refit-client/version-not-found"),
-      "Expected version-not-found diagnostic"
+      diags.some(
+        (d) => d.code === "@massivescale/tsp-refit-client/version-not-found",
+      ),
+      "Expected version-not-found diagnostic",
     );
   });
 
@@ -389,18 +453,34 @@ describe("emitter", () => {
       }
     `);
 
-    const requestFile = Object.keys(results).find((k) => k.endsWith("ItemCreateRequest.g.cs"));
-    ok(requestFile, "Expected ItemCreateRequest.cs to be emitted");
+    const requestFile = Object.keys(results).find((k) =>
+      k.endsWith("ItemCreateRequest.g.cs"),
+    );
+    ok(requestFile, "Expected ItemCreateRequest.g.cs to be emitted");
     const content = results[requestFile];
-    ok(content.includes("public record ItemCreateRequest"), "Expected record declaration");
+    ok(
+      content.includes("public record ItemCreateRequest"),
+      "Expected record declaration",
+    );
     ok(content.includes("public string Name"), "Expected Name property");
     ok(content.includes("public int Count"), "Expected Count property");
-    ok(!content.includes("public string Id"), "Read-only Id should be excluded");
-    ok(!content.includes("CreatedAt"), "Read-only createdAt should be excluded");
+    ok(
+      !content.includes("public string Id"),
+      "Read-only Id should be excluded",
+    );
+    ok(
+      !content.includes("CreatedAt"),
+      "Read-only createdAt should be excluded",
+    );
 
-    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
     ok(ifaceFile);
-    ok(results[ifaceFile].includes("ItemCreateRequest body"), "Interface should reference ItemCreateRequest");
+    ok(
+      results[ifaceFile].includes("ItemCreateRequest body"),
+      "Interface should reference ItemCreateRequest",
+    );
   });
 
   it("generates an UpdateRequest type excluding read-only and create-only properties for PATCH", async () => {
@@ -425,17 +505,33 @@ describe("emitter", () => {
       }
     `);
 
-    const requestFile = Object.keys(results).find((k) => k.endsWith("ItemUpdateRequest.g.cs"));
-    ok(requestFile, "Expected ItemUpdateRequest.cs to be emitted");
+    const requestFile = Object.keys(results).find((k) =>
+      k.endsWith("ItemUpdateRequest.g.cs"),
+    );
+    ok(requestFile, "Expected ItemUpdateRequest.g.cs to be emitted");
     const content = results[requestFile];
-    ok(content.includes("public record ItemUpdateRequest"), "Expected record declaration");
+    ok(
+      content.includes("public record ItemUpdateRequest"),
+      "Expected record declaration",
+    );
     ok(content.includes("public string Name"), "Expected Name property");
-    ok(!content.includes("public string Id"), "Read-only Id should be excluded");
-    ok(!content.includes("TenantId"), "Create-only tenantId should be excluded from update");
+    ok(
+      !content.includes("public string Id"),
+      "Read-only Id should be excluded",
+    );
+    ok(
+      !content.includes("TenantId"),
+      "Create-only tenantId should be excluded from update",
+    );
 
-    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
     ok(ifaceFile);
-    ok(results[ifaceFile].includes("ItemUpdateRequest body"), "Interface should reference ItemUpdateRequest");
+    ok(
+      results[ifaceFile].includes("ItemUpdateRequest body"),
+      "Interface should reference ItemUpdateRequest",
+    );
   });
 
   it("uses project-name option for .csproj filename and extensions class", async () => {
@@ -452,20 +548,32 @@ describe("emitter", () => {
         @get list(): string[];
       }
     `,
-      { "project-name": "MyAppClient" }
+      { "project-name": "MyAppClient" },
     );
 
-    const csproj = Object.keys(results).find((k) => k.endsWith("MyAppClient.csproj"));
+    const csproj = Object.keys(results).find((k) =>
+      k.endsWith("MyAppClient.csproj"),
+    );
     ok(csproj, "Expected MyAppClient.csproj");
 
-    const extFile = Object.keys(results).find((k) => k.endsWith("MyAppClientExtensions.g.cs"));
-    ok(extFile, "Expected MyAppClientExtensions.cs");
+    const extFile = Object.keys(results).find((k) =>
+      k.endsWith("MyAppClientExtensions.g.cs"),
+    );
+    ok(extFile, "Expected MyAppClientExtensions.g.cs");
     const extContent = results[extFile];
-    ok(extContent.includes("class MyAppClient"), "Expected MyAppClient aggregate class");
-    ok(extContent.includes("class MyAppClientExtensions"), "Expected MyAppClientExtensions class");
+    ok(
+      extContent.includes("class MyAppClient"),
+      "Expected MyAppClient aggregate class",
+    );
+    ok(
+      extContent.includes("class MyAppClientExtensions"),
+      "Expected MyAppClientExtensions class",
+    );
     ok(extContent.includes("AddMyAppClient"), "Expected AddMyAppClient method");
 
-    const defaultCsproj = Object.keys(results).find((k) => k.endsWith("TestApiClient.csproj"));
+    const defaultCsproj = Object.keys(results).find((k) =>
+      k.endsWith("TestApiClient.csproj"),
+    );
     ok(!defaultCsproj, "Default TestApiClient.csproj should not be emitted");
   });
 
@@ -488,15 +596,25 @@ describe("emitter", () => {
         @get list(): string[];
       }
     `,
-      { "version-in-namespace": true }
+      { "version-in-namespace": true },
     );
 
-    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
-    ok(ifaceFile, "Expected IItems.cs");
-    ok(results[ifaceFile].includes("namespace TestApi.Client.V2_0"), "Expected version in namespace");
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
+    ok(ifaceFile, "Expected IItems.g.cs");
+    ok(
+      results[ifaceFile].includes("namespace TestApi.Client.V2_0"),
+      "Expected version in namespace",
+    );
 
-    const vFolderFile = Object.keys(results).find((k) => k.includes("v2.0") && k.endsWith("IItems.g.cs"));
-    ok(!vFolderFile, "Single-version mode should not create version subfolders");
+    const vFolderFile = Object.keys(results).find(
+      (k) => k.includes("v2.0") && k.endsWith("IItems.g.cs"),
+    );
+    ok(
+      !vFolderFile,
+      "Single-version mode should not create version subfolders",
+    );
   });
 
   it("always appends version to namespace with all-versions regardless of version-in-namespace", async () => {
@@ -518,15 +636,25 @@ describe("emitter", () => {
         @get list(): string[];
       }
     `,
-      { "all-versions": true, "version-in-namespace": false }
+      { "all-versions": true, "version-in-namespace": false },
     );
 
-    const v1File = Object.keys(results).find((k) => k.includes("v1.0") && k.endsWith("IItems.g.cs"));
-    const v2File = Object.keys(results).find((k) => k.includes("v2.0") && k.endsWith("IItems.g.cs"));
-    ok(v1File, "Expected v1.0/IItems.cs");
-    ok(v2File, "Expected v2.0/IItems.cs");
-    ok(results[v1File].includes("namespace TestApi.Client.V1_0"), "Expected version in v1 namespace");
-    ok(results[v2File].includes("namespace TestApi.Client.V2_0"), "Expected version in v2 namespace");
+    const v1File = Object.keys(results).find(
+      (k) => k.includes("v1.0") && k.endsWith("IItems.g.cs"),
+    );
+    const v2File = Object.keys(results).find(
+      (k) => k.includes("v2.0") && k.endsWith("IItems.g.cs"),
+    );
+    ok(v1File, "Expected v1.0/Endpoints/IItems.g.cs");
+    ok(v2File, "Expected v2.0/Endpoints/IItems.g.cs");
+    ok(
+      results[v1File].includes("namespace TestApi.Client.V1_0"),
+      "Expected version in v1 namespace",
+    );
+    ok(
+      results[v2File].includes("namespace TestApi.Client.V2_0"),
+      "Expected version in v2 namespace",
+    );
   });
 
   it("emits generic records with correct type parameter and List<T> property type", async () => {
@@ -553,7 +681,10 @@ describe("emitter", () => {
     const pageFile = Object.keys(results).find((k) => k.endsWith("Page.g.cs"));
     ok(pageFile, "Expected Page.g.cs to be emitted");
     const content = results[pageFile];
-    ok(content.includes("public record Page<T>"), "Expected generic record declaration");
+    ok(
+      content.includes("public record Page<T>"),
+      "Expected generic record declaration",
+    );
     ok(content.includes("public List<T>"), "Expected List<T> property type");
     ok(!content.includes("Array<T>"), "Should not emit Array<T>");
   });
@@ -572,18 +703,31 @@ describe("emitter", () => {
         @get list(): string[];
       }
     `,
-      { "client-name": "PetStore" }
+      { "client-name": "PetStore" },
     );
 
-    const extFile = Object.keys(results).find((k) => k.endsWith("PetStoreExtensions.g.cs"));
+    const extFile = Object.keys(results).find((k) =>
+      k.endsWith("PetStoreExtensions.g.cs"),
+    );
     ok(extFile, "Expected PetStoreExtensions.g.cs");
     const extContent = results[extFile];
-    ok(extContent.includes("class PetStore"), "Expected PetStore aggregate class");
-    ok(extContent.includes("class PetStoreExtensions"), "Expected PetStoreExtensions class");
+    ok(
+      extContent.includes("class PetStore"),
+      "Expected PetStore aggregate class",
+    );
+    ok(
+      extContent.includes("class PetStoreExtensions"),
+      "Expected PetStoreExtensions class",
+    );
     ok(extContent.includes("AddPetStore"), "Expected AddPetStore method");
 
-    const defaultExt = Object.keys(results).find((k) => k.endsWith("TestApiClientExtensions.g.cs"));
-    ok(!defaultExt, "Default extensions file should not be emitted when client-name is set");
+    const defaultExt = Object.keys(results).find((k) =>
+      k.endsWith("TestApiClientExtensions.g.cs"),
+    );
+    ok(
+      !defaultExt,
+      "Default extensions file should not be emitted when client-name is set",
+    );
   });
 
   it("uses client-name as default NuGet title", async () => {
@@ -600,12 +744,15 @@ describe("emitter", () => {
         @get list(): string[];
       }
     `,
-      { "client-name": "PetStore" }
+      { "client-name": "PetStore" },
     );
 
     const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
     ok(csproj, "Expected .csproj");
-    ok(results[csproj].includes("<Title>PetStore</Title>"), "Expected NuGet title from client-name");
+    ok(
+      results[csproj].includes("<Title>PetStore</Title>"),
+      "Expected NuGet title from client-name",
+    );
   });
 
   it("nuget-title overrides client-name as NuGet title", async () => {
@@ -622,13 +769,19 @@ describe("emitter", () => {
         @get list(): string[];
       }
     `,
-      { "client-name": "PetStore", "nuget-title": "My Pet Store Client" }
+      { "client-name": "PetStore", "nuget-title": "My Pet Store Client" },
     );
 
     const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
     ok(csproj, "Expected .csproj");
-    ok(results[csproj].includes("<Title>My Pet Store Client</Title>"), "Expected explicit nuget-title");
-    ok(!results[csproj].includes("<Title>PetStore</Title>"), "client-name should not appear as title");
+    ok(
+      results[csproj].includes("<Title>My Pet Store Client</Title>"),
+      "Expected explicit nuget-title",
+    );
+    ok(
+      !results[csproj].includes("<Title>PetStore</Title>"),
+      "client-name should not appear as title",
+    );
   });
 
   it("emits NuGet package properties when provided", async () => {
@@ -651,17 +804,28 @@ describe("emitter", () => {
         "nuget-authors": "Acme Corp",
         "nuget-description": "Client library for the Acme Pet Store API.",
         "nuget-tags": "refit petstore api",
-      }
+      },
     );
 
     const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
     ok(csproj, "Expected .csproj");
     const content = results[csproj];
-    ok(content.includes("<PackageId>Acme.PetStore.Client</PackageId>"), "Expected PackageId");
+    ok(
+      content.includes("<PackageId>Acme.PetStore.Client</PackageId>"),
+      "Expected PackageId",
+    );
     ok(content.includes("<Version>2.0.0</Version>"), "Expected Version");
     ok(content.includes("<Authors>Acme Corp</Authors>"), "Expected Authors");
-    ok(content.includes("<Description>Client library for the Acme Pet Store API.</Description>"), "Expected Description");
-    ok(content.includes("<PackageTags>refit petstore api</PackageTags>"), "Expected PackageTags");
+    ok(
+      content.includes(
+        "<Description>Client library for the Acme Pet Store API.</Description>",
+      ),
+      "Expected Description",
+    );
+    ok(
+      content.includes("<PackageTags>refit petstore api</PackageTags>"),
+      "Expected PackageTags",
+    );
   });
 
   it("emits </PropertyGroup> at 2-space indent matching <PropertyGroup>", async () => {
@@ -678,14 +842,20 @@ describe("emitter", () => {
         @get list(): string[];
       }
     `,
-      { "nuget-version": "1.0.0" }
+      { "nuget-version": "1.0.0" },
     );
 
     const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
     ok(csproj, "Expected .csproj");
     const content = results[csproj];
-    ok(content.includes("  </PropertyGroup>"), "Expected 2-space-indented </PropertyGroup>");
-    ok(!content.includes("    </PropertyGroup>"), "Should not have 4-space-indented </PropertyGroup>");
+    ok(
+      content.includes("  </PropertyGroup>"),
+      "Expected 2-space-indented </PropertyGroup>",
+    );
+    ok(
+      !content.includes("    </PropertyGroup>"),
+      "Should not have 4-space-indented </PropertyGroup>",
+    );
   });
 
   it("does not emit NuGet title when neither client-name nor nuget-title is set", async () => {
@@ -704,7 +874,10 @@ describe("emitter", () => {
 
     const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
     ok(csproj, "Expected .csproj");
-    ok(!results[csproj].includes("<Title>"), "Title should not be emitted by default");
+    ok(
+      !results[csproj].includes("<Title>"),
+      "Title should not be emitted by default",
+    );
   });
 
   it("does not generate a request type when all properties are writable", async () => {
@@ -723,12 +896,22 @@ describe("emitter", () => {
       }
     `);
 
-    const requestFile = Object.keys(results).find((k) => k.endsWith("ItemCreateRequest.g.cs"));
-    ok(!requestFile, "Should not emit ItemCreateRequest when all properties are writable");
+    const requestFile = Object.keys(results).find((k) =>
+      k.endsWith("ItemCreateRequest.g.cs"),
+    );
+    ok(
+      !requestFile,
+      "Should not emit ItemCreateRequest when all properties are writable",
+    );
 
-    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
     ok(ifaceFile);
-    ok(results[ifaceFile].includes("[Body] Item body"), "Interface should use Item directly");
+    ok(
+      results[ifaceFile].includes("[Body] Item body"),
+      "Interface should use Item directly",
+    );
   });
 
   // ─── Aggregate client ────────────────────────────────────────────────────────
@@ -755,34 +938,65 @@ describe("emitter", () => {
       }
     `);
 
-    const extFile = Object.keys(results).find((k) => k.endsWith("TestApiClientExtensions.g.cs"));
+    const extFile = Object.keys(results).find((k) =>
+      k.endsWith("TestApiClientExtensions.g.cs"),
+    );
     ok(extFile, "Expected TestApiClientExtensions.g.cs");
     const content = results[extFile];
 
-    ok(content.includes("public class TestApiClient"), "Expected aggregate class declaration");
-    ok(content.includes("public IPets Pets { get; }"), "Expected Pets property");
-    ok(content.includes("public IStores Stores { get; }"), "Expected Stores property");
+    ok(
+      content.includes("public class TestApiClient"),
+      "Expected aggregate class declaration",
+    );
+    ok(
+      content.includes("public IPets Pets { get; }"),
+      "Expected Pets property",
+    );
+    ok(
+      content.includes("public IStores Stores { get; }"),
+      "Expected Stores property",
+    );
     ok(content.includes("IPets pets"), "Expected pets constructor param");
     ok(content.includes("IStores stores"), "Expected stores constructor param");
-    ok(content.includes("Pets = pets;"), "Expected Pets assignment in constructor");
-    ok(content.includes("Stores = stores;"), "Expected Stores assignment in constructor");
-    ok(content.includes("AddTransient<TestApiClient>()"), "Expected aggregate client registered as transient");
+    ok(
+      content.includes("Pets = pets;"),
+      "Expected Pets assignment in constructor",
+    );
+    ok(
+      content.includes("Stores = stores;"),
+      "Expected Stores assignment in constructor",
+    );
+    ok(
+      content.includes("AddTransient<TestApiClient>()"),
+      "Expected aggregate client registered as transient",
+    );
     ok(content.includes("AddSingleClient<IPets>"), "Expected IPets registered");
-    ok(content.includes("AddSingleClient<IStores>"), "Expected IStores registered");
+    ok(
+      content.includes("AddSingleClient<IStores>"),
+      "Expected IStores registered",
+    );
   });
 
   // ─── NuGet version derivation ─────────────────────────────────────────────
 
   describe("tryParseSemver", () => {
-    it("parses two-part version", () => strictEqual(tryParseSemver("1.2"), "1.2.0"));
-    it("parses three-part version", () => strictEqual(tryParseSemver("1.2.3"), "1.2.3"));
+    it("parses two-part version", () =>
+      strictEqual(tryParseSemver("1.2"), "1.2.0"));
+    it("parses three-part version", () =>
+      strictEqual(tryParseSemver("1.2.3"), "1.2.3"));
     it("strips leading v", () => strictEqual(tryParseSemver("v2.1"), "2.1.0"));
-    it("strips leading V", () => strictEqual(tryParseSemver("V3.0.1"), "3.0.1"));
-    it("preserves pre-release suffix", () => strictEqual(tryParseSemver("v2.0-preview"), "2.0.0-preview"));
-    it("preserves rc suffix", () => strictEqual(tryParseSemver("1.0.0-rc.1"), "1.0.0-rc.1"));
-    it("returns undefined for single-digit", () => strictEqual(tryParseSemver("v1"), undefined));
-    it("returns undefined for date-style string", () => strictEqual(tryParseSemver("2022-10-15"), undefined));
-    it("returns undefined for plain label", () => strictEqual(tryParseSemver("preview"), undefined));
+    it("strips leading V", () =>
+      strictEqual(tryParseSemver("V3.0.1"), "3.0.1"));
+    it("preserves pre-release suffix", () =>
+      strictEqual(tryParseSemver("v2.0-preview"), "2.0.0-preview"));
+    it("preserves rc suffix", () =>
+      strictEqual(tryParseSemver("1.0.0-rc.1"), "1.0.0-rc.1"));
+    it("returns undefined for single-digit", () =>
+      strictEqual(tryParseSemver("v1"), undefined));
+    it("returns undefined for date-style string", () =>
+      strictEqual(tryParseSemver("2022-10-15"), undefined));
+    it("returns undefined for plain label", () =>
+      strictEqual(tryParseSemver("preview"), undefined));
   });
 
   describe("toCalVer", () => {
@@ -815,7 +1029,10 @@ describe("emitter", () => {
 
     const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
     ok(csproj, "Expected .csproj");
-    ok(results[csproj].includes("<Version>2.1.0</Version>"), "Expected semver derived from TypeSpec version");
+    ok(
+      results[csproj].includes("<Version>2.1.0</Version>"),
+      "Expected semver derived from TypeSpec version",
+    );
   });
 
   it("falls back to CalVer when TypeSpec version is not semver-parseable", async () => {
@@ -839,7 +1056,11 @@ describe("emitter", () => {
 
     const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
     ok(csproj, "Expected .csproj");
-    match(results[csproj], /<Version>\d{4}\.\d{2}\.\d{2}<\/Version>/, "Expected CalVer fallback");
+    match(
+      results[csproj],
+      /<Version>\d{4}\.\d{2}\.\d{2}<\/Version>/,
+      "Expected CalVer fallback",
+    );
   });
 
   it("falls back to CalVer for unversioned API", async () => {
@@ -858,7 +1079,11 @@ describe("emitter", () => {
 
     const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
     ok(csproj, "Expected .csproj");
-    match(results[csproj], /<Version>\d{4}\.\d{2}\.\d{2}<\/Version>/, "Expected CalVer for unversioned API");
+    match(
+      results[csproj],
+      /<Version>\d{4}\.\d{2}\.\d{2}<\/Version>/,
+      "Expected CalVer for unversioned API",
+    );
   });
 
   it("uses target-version semver when target-version is specified", async () => {
@@ -880,13 +1105,19 @@ describe("emitter", () => {
         @get list(): string[];
       }
     `,
-      { "target-version": "v1.0" }
+      { "target-version": "v1.0" },
     );
 
     const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
     ok(csproj, "Expected .csproj");
-    ok(results[csproj].includes("<Version>1.0.0</Version>"), "Expected version from target-version");
-    ok(!results[csproj].includes("<Version>2.0.0</Version>"), "Should not use latest when target-version is set");
+    ok(
+      results[csproj].includes("<Version>1.0.0</Version>"),
+      "Expected version from target-version",
+    );
+    ok(
+      !results[csproj].includes("<Version>2.0.0</Version>"),
+      "Should not use latest when target-version is set",
+    );
   });
 
   it("uses latest version semver when all-versions is true", async () => {
@@ -908,12 +1139,15 @@ describe("emitter", () => {
         @get list(): string[];
       }
     `,
-      { "all-versions": true }
+      { "all-versions": true },
     );
 
     const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
     ok(csproj, "Expected .csproj");
-    ok(results[csproj].includes("<Version>3.2.0</Version>"), "Expected latest version semver with all-versions");
+    ok(
+      results[csproj].includes("<Version>3.2.0</Version>"),
+      "Expected latest version semver with all-versions",
+    );
   });
 
   // ─── Multi-line doc comment rendering ────────────────────────────────────────
@@ -938,15 +1172,32 @@ describe("emitter", () => {
       }
     `);
 
-    const modelFile = Object.keys(results).find((k) => k.endsWith("Widget.g.cs"));
+    const modelFile = Object.keys(results).find((k) =>
+      k.endsWith("Widget.g.cs"),
+    );
     ok(modelFile, "Expected Widget.g.cs");
     const content = results[modelFile];
-    ok(content.includes("/// First line."), "Expected first doc line on record");
-    ok(content.includes("/// Second line."), "Expected second doc line on record");
-    ok(!content.includes("Second line.") || content.split("/// Second line.").length >= 2,
-      "Second line must always start with ///");
-    ok(content.includes("/// Prop first."), "Expected first doc line on property");
-    ok(content.includes("/// Prop second."), "Expected second doc line on property");
+    ok(
+      content.includes("/// First line."),
+      "Expected first doc line on record",
+    );
+    ok(
+      content.includes("/// Second line."),
+      "Expected second doc line on record",
+    );
+    ok(
+      !content.includes("Second line.") ||
+        content.split("/// Second line.").length >= 2,
+      "Second line must always start with ///",
+    );
+    ok(
+      content.includes("/// Prop first."),
+      "Expected first doc line on property",
+    );
+    ok(
+      content.includes("/// Prop second."),
+      "Expected second doc line on property",
+    );
   });
 
   it("emits all lines of a multi-line enum doc with /// prefix", async () => {
@@ -971,13 +1222,18 @@ describe("emitter", () => {
       }
     `);
 
-    const enumFile = Object.keys(results).find((k) => k.endsWith("Status.g.cs"));
+    const enumFile = Object.keys(results).find((k) =>
+      k.endsWith("Status.g.cs"),
+    );
     ok(enumFile, "Expected Status.g.cs");
     const content = results[enumFile];
     ok(content.includes("/// Enum first."), "Expected first enum doc line");
     ok(content.includes("/// Enum second."), "Expected second enum doc line");
     ok(content.includes("/// Member first."), "Expected first member doc line");
-    ok(content.includes("/// Member second."), "Expected second member doc line");
+    ok(
+      content.includes("/// Member second."),
+      "Expected second member doc line",
+    );
   });
 
   it("emits all lines of a multi-line operation doc with /// prefix", async () => {
@@ -995,7 +1251,9 @@ describe("emitter", () => {
       }
     `);
 
-    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
     ok(ifaceFile, "Expected IItems.g.cs");
     const content = results[ifaceFile];
     ok(content.includes("/// Op first."), "Expected first op doc line");
@@ -1018,11 +1276,19 @@ describe("emitter", () => {
       }
     `);
 
-    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
     ok(ifaceFile, "Expected IItems.g.cs");
     const content = results[ifaceFile];
-    ok(content.includes("int? skip = null"), "Expected optional skip as int? with default null");
-    ok(content.includes("int? take = null"), "Expected optional take as int? with default null");
+    ok(
+      content.includes("int? skip = null"),
+      "Expected optional skip as int? with default null",
+    );
+    ok(
+      content.includes("int? take = null"),
+      "Expected optional take as int? with default null",
+    );
   });
 
   it("emits required query params without nullable suffix", async () => {
@@ -1039,12 +1305,23 @@ describe("emitter", () => {
       }
     `);
 
-    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
     ok(ifaceFile, "Expected IItems.g.cs");
     const content = results[ifaceFile];
-    ok(content.includes("string filter"), "Expected required filter as plain string");
-    ok(!content.includes("string? filter"), "Required param should not be nullable");
-    ok(!content.includes("= null"), "Required param should not have null default");
+    ok(
+      content.includes("string filter"),
+      "Expected required filter as plain string",
+    );
+    ok(
+      !content.includes("string? filter"),
+      "Required param should not be nullable",
+    );
+    ok(
+      !content.includes("= null"),
+      "Required param should not have null default",
+    );
   });
 
   it("places optional params after required ones when mixed", async () => {
@@ -1063,16 +1340,26 @@ describe("emitter", () => {
       }
     `);
 
-    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
     ok(ifaceFile, "Expected IItems.g.cs");
     const content = results[ifaceFile];
-    const methodLine = content.split("\n").find((l) => l.includes("CreateAsync("));
+    const methodLine = content
+      .split("\n")
+      .find((l) => l.includes("CreateAsync("));
     ok(methodLine, "Expected CreateAsync method");
     const skipIdx = methodLine!.indexOf("storeId");
     const bodyIdx = methodLine!.indexOf("[Body]");
     const dryRunIdx = methodLine!.indexOf("dryRun");
-    ok(skipIdx < bodyIdx, "Required path param storeId must come before required body");
+    ok(
+      skipIdx < bodyIdx,
+      "Required path param storeId must come before required body",
+    );
     ok(bodyIdx < dryRunIdx, "Required body must come before optional dryRun");
-    ok(content.includes("bool? dryRun = null"), "Expected dryRun as bool? with default null");
+    ok(
+      content.includes("bool? dryRun = null"),
+      "Expected dryRun as bool? with default null",
+    );
   });
 });
