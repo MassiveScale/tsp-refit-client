@@ -32,7 +32,12 @@ import {
   isVisible,
   resolveRequestVisibility,
 } from "@typespec/http";
-import { getAllVersions, getAvailabilityMap, Availability, Version } from "@typespec/versioning";
+import {
+  getAllVersions,
+  getAvailabilityMap,
+  Availability,
+  Version,
+} from "@typespec/versioning";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -55,7 +60,9 @@ import { EmitterOptions, createDiagnostic } from "./lib.js";
 
 // ─── Entry point ────────────────────────────────────────────────────────────
 
-export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<void> {
+export async function $onEmit(
+  context: EmitContext<EmitterOptions>,
+): Promise<void> {
   const { program, emitterOutputDir, options } = context;
   if (program.compilerOptions.noEmit) return;
 
@@ -69,7 +76,14 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
   for (const service of services) {
     if (!isService(program, service.namespace)) continue;
     if (service.operations.length === 0) continue;
-    await emitService(program, service.namespace, service.operations, emitterOutputDir, options, renderer);
+    await emitService(
+      program,
+      service.namespace,
+      service.operations,
+      emitterOutputDir,
+      options,
+      renderer,
+    );
   }
 
   if (options["dotnet-format"] !== false) {
@@ -89,13 +103,15 @@ function buildRenderer(program: Program, options: EmitterOptions): Renderer {
         code: "template-load-failed",
         target: NoTarget,
         format: { message: String(e) },
-      })
+      }),
     );
     return createRenderer({});
   }
 }
 
-function resolveTemplateOverrides(templates?: TemplateOverrides): TemplateOverrides {
+function resolveTemplateOverrides(
+  templates?: TemplateOverrides,
+): TemplateOverrides {
   if (!templates) return {};
   const result: TemplateOverrides = {};
   for (const [key, val] of Object.entries(templates)) {
@@ -108,7 +124,10 @@ function resolveTemplateOverrides(templates?: TemplateOverrides): TemplateOverri
 
 // ─── File writing helper ─────────────────────────────────────────────────────
 
-async function fileExists(program: Program, filePath: string): Promise<boolean> {
+async function fileExists(
+  program: Program,
+  filePath: string,
+): Promise<boolean> {
   try {
     const s = await program.host.stat(filePath);
     return s.isFile();
@@ -117,7 +136,11 @@ async function fileExists(program: Program, filePath: string): Promise<boolean> 
   }
 }
 
-async function writeFile(program: Program, filePath: string, content: string): Promise<void> {
+async function writeFile(
+  program: Program,
+  filePath: string,
+  content: string,
+): Promise<void> {
   const dir = filePath.substring(0, filePath.lastIndexOf("/"));
   if (dir) await program.host.mkdirp(dir);
   await program.host.writeFile(filePath, content);
@@ -144,7 +167,7 @@ async function deleteGcsFiles(program: Program, dir: string): Promise<void> {
       } else if (stat.isFile() && entry.endsWith(".g.cs")) {
         await program.host.rm(entryPath);
       }
-    })
+    }),
   );
 }
 
@@ -162,9 +185,15 @@ function runDotnetFormat(program: Program, outputDir: string): void {
 
   if (result.error || (result.status !== null && result.status !== 0)) {
     const message =
-      result.error?.message ?? result.stderr?.trim() ?? `exited with code ${result.status}`;
+      result.error?.message ??
+      result.stderr?.trim() ??
+      `exited with code ${result.status}`;
     program.reportDiagnostic(
-      createDiagnostic({ code: "dotnet-format-failed", target: NoTarget, format: { message } })
+      createDiagnostic({
+        code: "dotnet-format-failed",
+        target: NoTarget,
+        format: { message },
+      }),
     );
   }
 }
@@ -177,7 +206,7 @@ async function emitService(
   operations: HttpOperation[],
   outputDir: string,
   options: EmitterOptions,
-  renderer: Renderer
+  renderer: Renderer,
 ): Promise<void> {
   const nsFullName = getNamespaceFullName(serviceNs);
   const projectName = options["project-name"] ?? `${nsFullName}Client`;
@@ -187,24 +216,35 @@ async function emitService(
   const clientName = options["client-name"] ?? csharpName;
   const baseNs = options["root-namespace"] ?? `${nsFullName}.Client`;
   const rawNetVersion = options["net-version"] ?? "net8.0";
-  const netVersionParts = rawNetVersion.split(";").map((v) => v.trim()).filter(Boolean);
+  const netVersionParts = rawNetVersion
+    .split(";")
+    .map((v) => v.trim())
+    .filter(Boolean);
   const netVersion = netVersionParts.join(";");
   const isMultiTarget = netVersionParts.length > 1;
 
-  const nugetDescription = options["nuget-description"] ?? `Refit client for the ${baseNs} API`;
-  const nugetTitle = options["nuget-title"] ?? (options["client-name"] !== undefined ? clientName : undefined);
+  const nugetDescription =
+    options["nuget-description"] ?? `Refit client for the ${baseNs} API`;
+  const nugetTitle =
+    options["nuget-title"] ??
+    (options["client-name"] !== undefined ? clientName : undefined);
   const allVersions = getAllVersions(program, serviceNs) ?? [];
 
   const models = new Map<string, Model>();
   const enums = new Map<string, Enum>();
 
   // Group operations by container (Interface or Namespace)
-  const byContainer = new Map<string, { name: string; container: Interface | Namespace; ops: HttpOperation[] }>();
+  const byContainer = new Map<
+    string,
+    { name: string; container: Interface | Namespace; ops: HttpOperation[] }
+  >();
   for (const op of operations) {
     const c = op.container;
-    const key = c.kind === "Interface" ? c.name : `__ns_${(c as Namespace).name}`;
+    const key =
+      c.kind === "Interface" ? c.name : `__ns_${(c as Namespace).name}`;
     const name = c.kind === "Interface" ? c.name : serviceNs.name;
-    if (!byContainer.has(key)) byContainer.set(key, { name, container: c, ops: [] });
+    if (!byContainer.has(key))
+      byContainer.set(key, { name, container: c, ops: [] });
     byContainer.get(key)!.ops.push(op);
   }
 
@@ -217,9 +257,14 @@ async function emitService(
 
   if (versionsToEmit.length > 0) {
     for (const version of versionsToEmit) {
-      const vDir = useVersionedFolders ? resolvePath(outputDir, version.value) : outputDir;
-      const shouldAppendVersion = useVersionedFolders || options["version-in-namespace"] === true;
-      const vNs = shouldAppendVersion ? `${baseNs}.${sanitizeVersionForNs(version.value)}` : baseNs;
+      const vDir = useVersionedFolders
+        ? resolvePath(outputDir, version.value)
+        : outputDir;
+      const shouldAppendVersion =
+        useVersionedFolders || options["version-in-namespace"] === true;
+      const vNs = shouldAppendVersion
+        ? `${baseNs}.${sanitizeVersionForNs(version.value)}`
+        : baseNs;
       const requestTypes = new Map<string, RequestType>();
       const vInterfaceNames: string[] = [];
       for (const { name, container, ops } of byContainer.values()) {
@@ -227,18 +272,57 @@ async function emitService(
         if (vOps.length === 0) continue;
         vInterfaceNames.push(`I${name}`);
         const containerDoc = getDoc(program, container);
-        const content = buildInterface(`I${name}`, vNs, vOps, containerDoc, program, models, enums, version, requestTypes, renderer);
-        await writeFile(program, resolvePath(vDir, "Endpoints", `I${name}.g.cs`), content);
+        const content = buildInterface(
+          `I${name}`,
+          vNs,
+          vOps,
+          containerDoc,
+          program,
+          models,
+          enums,
+          version,
+          requestTypes,
+          renderer,
+        );
+        await writeFile(
+          program,
+          resolvePath(vDir, "Endpoints", `I${name}.g.cs`),
+          content,
+        );
       }
       for (const [, rt] of requestTypes) {
-        const content = buildFilteredRecord(rt.name, rt.doc, rt.props, vNs, program, models, enums, renderer);
+        const content = buildFilteredRecord(
+          rt.name,
+          rt.doc,
+          rt.props,
+          vNs,
+          program,
+          models,
+          enums,
+          renderer,
+        );
         // In single-version mode, request types live alongside regular models.
-        const rtDir = useVersionedFolders ? vDir : resolvePath(outputDir, "Models");
-        await writeFile(program, resolvePath(rtDir, `${rt.name}.g.cs`), content);
+        const rtDir = useVersionedFolders
+          ? vDir
+          : resolvePath(outputDir, "Models");
+        await writeFile(
+          program,
+          resolvePath(rtDir, `${rt.name}.g.cs`),
+          content,
+        );
       }
       if (vInterfaceNames.length > 0) {
-        const content = buildExtensions(clientName, vNs, vInterfaceNames, renderer);
-        await writeFile(program, resolvePath(vDir, `${clientName}Extensions.g.cs`), content);
+        const content = buildExtensions(
+          clientName,
+          vNs,
+          vInterfaceNames,
+          renderer,
+        );
+        await writeFile(
+          program,
+          resolvePath(vDir, `${clientName}Extensions.g.cs`),
+          content,
+        );
       }
     }
   } else {
@@ -247,29 +331,81 @@ async function emitService(
     for (const { name, container, ops } of byContainer.values()) {
       interfaceNames.push(`I${name}`);
       const containerDoc = getDoc(program, container);
-      const content = buildInterface(`I${name}`, baseNs, ops, containerDoc, program, models, enums, undefined, requestTypes, renderer);
-      await writeFile(program, resolvePath(outputDir, "Endpoints", `I${name}.g.cs`), content);
+      const content = buildInterface(
+        `I${name}`,
+        baseNs,
+        ops,
+        containerDoc,
+        program,
+        models,
+        enums,
+        undefined,
+        requestTypes,
+        renderer,
+      );
+      await writeFile(
+        program,
+        resolvePath(outputDir, "Endpoints", `I${name}.g.cs`),
+        content,
+      );
     }
     for (const [, rt] of requestTypes) {
-      const content = buildFilteredRecord(rt.name, rt.doc, rt.props, baseNs, program, models, enums, renderer);
-      await writeFile(program, resolvePath(outputDir, "Models", `${rt.name}.g.cs`), content);
+      const content = buildFilteredRecord(
+        rt.name,
+        rt.doc,
+        rt.props,
+        baseNs,
+        program,
+        models,
+        enums,
+        renderer,
+      );
+      await writeFile(
+        program,
+        resolvePath(outputDir, "Models", `${rt.name}.g.cs`),
+        content,
+      );
     }
     if (interfaceNames.length > 0) {
-      const content = buildExtensions(clientName, baseNs, interfaceNames, renderer);
-      await writeFile(program, resolvePath(outputDir, `${clientName}Extensions.g.cs`), content);
+      const content = buildExtensions(
+        clientName,
+        baseNs,
+        interfaceNames,
+        renderer,
+      );
+      await writeFile(
+        program,
+        resolvePath(outputDir, `${clientName}Extensions.g.cs`),
+        content,
+      );
     }
   }
 
   // Emit models and enums
   for (const [, model] of models) {
     if (!isEmittable(model, nsFullName)) continue;
-    const content = buildRecord(model, baseNs, program, models, enums, renderer);
-    await writeFile(program, resolvePath(outputDir, "Models", `${model.name}.g.cs`), content);
+    const content = buildRecord(
+      model,
+      baseNs,
+      program,
+      models,
+      enums,
+      renderer,
+    );
+    await writeFile(
+      program,
+      resolvePath(outputDir, "Models", `${model.name}.g.cs`),
+      content,
+    );
   }
   for (const [, e] of enums) {
     if (!isEmittableEnum(e, nsFullName)) continue;
     const content = buildEnum(e, baseNs, program, renderer);
-    await writeFile(program, resolvePath(outputDir, "Models", `${e.name}.g.cs`), content);
+    await writeFile(
+      program,
+      resolvePath(outputDir, "Models", `${e.name}.g.cs`),
+      content,
+    );
   }
 
   // Emit project file
@@ -280,7 +416,16 @@ async function emitService(
       await writeFile(
         program,
         csprojPath,
-        buildCsproj(baseNs, netVersion, isMultiTarget, deriveNugetVersion(allVersions, options), nugetDescription, nugetTitle, options, renderer)
+        buildCsproj(
+          baseNs,
+          netVersion,
+          isMultiTarget,
+          deriveNugetVersion(allVersions, options),
+          nugetDescription,
+          nugetTitle,
+          options,
+          renderer,
+        ),
       );
     }
   }
@@ -321,13 +466,18 @@ export function toCalVer(date: Date): string {
  *    - Latest declared version otherwise (covers both default single-version and all-versions)
  * 3. CalVer (`YYYY.MM.DD`) when no version is declared or semver cannot be parsed
  */
-export function deriveNugetVersion(allVersions: Version[], options: EmitterOptions): string {
+export function deriveNugetVersion(
+  allVersions: Version[],
+  options: EmitterOptions,
+): string {
   if (options["nuget-version"]) return options["nuget-version"];
 
   let versionString: string | undefined;
   if (allVersions.length > 0) {
     if (options["target-version"] && options["all-versions"] !== true) {
-      versionString = allVersions.find((v) => v.value === options["target-version"])?.value;
+      versionString = allVersions.find(
+        (v) => v.value === options["target-version"],
+      )?.value;
     }
     versionString ??= allVersions[allVersions.length - 1].value;
   }
@@ -349,7 +499,7 @@ export function deriveNugetVersion(allVersions: Version[], options: EmitterOptio
 function resolveTargetVersions(
   program: Program,
   versions: Version[],
-  options: EmitterOptions
+  options: EmitterOptions,
 ): Version[] | null {
   const targetValue = options["target-version"];
 
@@ -365,8 +515,11 @@ function resolveTargetVersions(
         createDiagnostic({
           code: "version-not-found",
           target: NoTarget,
-          format: { version: targetValue, available: "none (API is not versioned)" },
-        })
+          format: {
+            version: targetValue,
+            available: "none (API is not versioned)",
+          },
+        }),
       );
       return null;
     }
@@ -385,7 +538,7 @@ function resolveTargetVersions(
             version: targetValue,
             available: versions.map((v) => v.value).join(", "),
           },
-        })
+        }),
       );
       return null;
     }
@@ -398,7 +551,11 @@ function resolveTargetVersions(
 
 // ─── Version filtering ───────────────────────────────────────────────────────
 
-function isOpInVersion(program: Program, op: HttpOperation, version: Version): boolean {
+function isOpInVersion(
+  program: Program,
+  op: HttpOperation,
+  version: Version,
+): boolean {
   const avail = getAvailabilityMap(program, op.operation);
   if (!avail) return true;
   const a = avail.get(version.name);
@@ -415,10 +572,14 @@ interface RequestType {
 
 function requestTypeSuffix(verb: string): string {
   switch (verb) {
-    case "post": return "Create";
-    case "patch": return "Update";
-    case "put": return "Replace";
-    default: return capitalize(verb);
+    case "post":
+      return "Create";
+    case "patch":
+      return "Update";
+    case "put":
+      return "Replace";
+    default:
+      return capitalize(verb);
   }
 }
 
@@ -426,7 +587,7 @@ function filterPropsForRequest(
   model: Model,
   visibility: Visibility,
   version: Version | undefined,
-  program: Program
+  program: Program,
 ): Map<string, ModelProperty> {
   const result = new Map<string, ModelProperty>();
   for (const [name, prop] of flattenProperties(model)) {
@@ -445,13 +606,23 @@ function filterPropsForRequest(
 
 // TypeSpec HTTP's applyMergePatchTransform produces models with these stable name suffixes.
 // These models are already purpose-built request payloads and must not be filtered further.
-const MERGE_PATCH_SUFFIXES = ["MergePatchUpdate", "MergePatchUpdateReplaceOnly", "MergePatchCreateOrUpdate"];
+const MERGE_PATCH_SUFFIXES = [
+  "MergePatchUpdate",
+  "MergePatchUpdateReplaceOnly",
+  "MergePatchCreateOrUpdate",
+];
 
 function isSynthesizedMergePatchModel(model: Model): boolean {
-  return model.name ? MERGE_PATCH_SUFFIXES.some((s) => model.name!.endsWith(s)) : false;
+  return model.name
+    ? MERGE_PATCH_SUFFIXES.some((s) => model.name!.endsWith(s))
+    : false;
 }
 
-function hasHiddenProperties(model: Model, visibility: Visibility, program: Program): boolean {
+function hasHiddenProperties(
+  model: Model,
+  visibility: Visibility,
+  program: Program,
+): boolean {
   for (const [, prop] of flattenProperties(model)) {
     if (!isVisible(program, prop, visibility)) return true;
   }
@@ -470,14 +641,21 @@ function buildInterface(
   enums: Map<string, Enum>,
   version: Version | undefined,
   requestTypes: Map<string, RequestType>,
-  renderer: Renderer
+  renderer: Renderer,
 ): string {
-  const methods = ops.map((op) => buildMethodView(op, program, models, enums, version, requestTypes));
+  const methods = ops.map((op) =>
+    buildMethodView(op, program, models, enums, version, requestTypes),
+  );
   const view: RefitInterfaceView = { interfaceName: csName, doc, methods };
   const body = renderer.renderRefitInterface(view);
   const fileView: FileView = {
     namespace: csNs,
-    usings: sortUsings(["Refit", "System.Collections.Generic", "System.Threading", "System.Threading.Tasks"]),
+    usings: sortUsings([
+      "Refit",
+      "System.Collections.Generic",
+      "System.Threading",
+      "System.Threading.Tasks",
+    ]),
     body,
     fileName: `${csName}.g.cs`,
   };
@@ -490,7 +668,7 @@ function buildMethodView(
   models: Map<string, Model>,
   enums: Map<string, Enum>,
   version: Version | undefined,
-  requestTypes: Map<string, RequestType>
+  requestTypes: Map<string, RequestType>,
 ): MethodView {
   const verb = capitalize(op.verb);
   const path = op.path;
@@ -510,7 +688,8 @@ function buildMethodView(
 
     let paramStr: string;
     if (param.type === "query") {
-      const httpName = getQueryParamName(program, param.param) ?? param.param.name;
+      const httpName =
+        getQueryParamName(program, param.param) ?? param.param.name;
       if (httpName !== param.param.name) {
         paramStr = `[AliasAs("${httpName}")] ${csType}${nullSuffix} ${csParam}${defaultSuffix}`;
       } else {
@@ -541,7 +720,11 @@ function buildMethodView(
     ) {
       const bodyModel = body.type as Model;
       if (bodyModel.name && !isSynthesizedMergePatchModel(bodyModel)) {
-        const visibility = resolveRequestVisibility(program, op.operation, op.verb);
+        const visibility = resolveRequestVisibility(
+          program,
+          op.operation,
+          op.verb,
+        );
         if (hasHiddenProperties(bodyModel, visibility, program)) {
           const suffix = requestTypeSuffix(op.verb);
           const requestTypeName = `${bodyModel.name}${suffix}Request`;
@@ -549,7 +732,12 @@ function buildMethodView(
             requestTypes.set(requestTypeName, {
               name: requestTypeName,
               doc: getDoc(program, bodyModel),
-              props: filterPropsForRequest(bodyModel, visibility, version, program),
+              props: filterPropsForRequest(
+                bodyModel,
+                visibility,
+                version,
+                program,
+              ),
             });
           }
           bodyType = requestTypeName;
@@ -560,7 +748,11 @@ function buildMethodView(
     requiredParams.push(`[Body] ${bodyType} body`);
   }
 
-  const params = [...requiredParams, ...optionalParams, "CancellationToken cancellationToken = default"];
+  const params = [
+    ...requiredParams,
+    ...optionalParams,
+    "CancellationToken cancellationToken = default",
+  ];
 
   return {
     doc: doc ? escapeXml(doc) : undefined,
@@ -576,7 +768,7 @@ function resolveReturnType(
   responses: HttpOperationResponse[],
   program: Program,
   models: Map<string, Model>,
-  enums: Map<string, Enum>
+  enums: Map<string, Enum>,
 ): string {
   for (const resp of responses) {
     const sc = resp.statusCodes;
@@ -602,7 +794,7 @@ function resolveBodyType(
   body: HttpPayloadBody,
   program: Program,
   models: Map<string, Model>,
-  enums: Map<string, Enum>
+  enums: Map<string, Enum>,
 ): string {
   if (body.bodyKind === "single") {
     return mapType(body.type, program, models, enums);
@@ -616,7 +808,7 @@ function buildPropertyViews(
   props: Iterable<[string, ModelProperty]>,
   program: Program,
   models: Map<string, Model>,
-  enums: Map<string, Enum>
+  enums: Map<string, Enum>,
 ): PropertyView[] {
   const result: PropertyView[] = [];
   for (const [, prop] of props) {
@@ -641,17 +833,23 @@ function buildRecord(
   program: Program,
   models: Map<string, Model>,
   enums: Map<string, Enum>,
-  renderer: Renderer
+  renderer: Renderer,
 ): string {
   const typeParams = collectTypeParams(model);
-  const genericSuffix = typeParams.length > 0 ? `<${typeParams.join(", ")}>` : "";
+  const genericSuffix =
+    typeParams.length > 0 ? `<${typeParams.join(", ")}>` : "";
   const doc = getDoc(program, model);
 
   const recordView: RecordView = {
     doc: doc ? escapeXml(doc) : undefined,
     recordName: model.name!,
     genericSuffix,
-    properties: buildPropertyViews(flattenProperties(model), program, models, enums),
+    properties: buildPropertyViews(
+      flattenProperties(model),
+      program,
+      models,
+      enums,
+    ),
   };
 
   const body = renderer.renderRecord(recordView);
@@ -672,7 +870,7 @@ function buildFilteredRecord(
   program: Program,
   models: Map<string, Model>,
   enums: Map<string, Enum>,
-  renderer: Renderer
+  renderer: Renderer,
 ): string {
   const recordView: RecordView = {
     doc: doc ? escapeXml(doc) : undefined,
@@ -739,13 +937,19 @@ function defaultForTypeRaw(csType: string): string | undefined {
   return undefined;
 }
 
-function buildEnum(e: Enum, csNs: string, program: Program, renderer: Renderer): string {
+function buildEnum(
+  e: Enum,
+  csNs: string,
+  program: Program,
+  renderer: Renderer,
+): string {
   const doc = getDoc(program, e);
 
   const members: EnumMemberView[] = [];
   for (const [, member] of e.members) {
     const memberDoc = getDoc(program, member);
-    const stringValue = typeof member.value === "string" ? member.value : member.name;
+    const stringValue =
+      typeof member.value === "string" ? member.value : member.name;
     members.push({
       doc: memberDoc ? escapeXml(memberDoc) : undefined,
       name: toCsPropName(member.name),
@@ -762,7 +966,10 @@ function buildEnum(e: Enum, csNs: string, program: Program, renderer: Renderer):
   const body = renderer.renderEnum(enumView);
   const fileView: FileView = {
     namespace: csNs,
-    usings: sortUsings(["System.Runtime.Serialization", "System.Text.Json.Serialization"]),
+    usings: sortUsings([
+      "System.Runtime.Serialization",
+      "System.Text.Json.Serialization",
+    ]),
     body,
     fileName: `${e.name}.g.cs`,
   };
@@ -779,7 +986,7 @@ function buildCsproj(
   nugetDescription: string,
   nugetTitle: string | undefined,
   options: EmitterOptions,
-  renderer: Renderer
+  renderer: Renderer,
 ): string {
   const view: CsprojView = {
     rootNamespace: rootNs,
@@ -801,17 +1008,23 @@ function buildExtensions(
   serviceName: string,
   csNs: string,
   interfaceNames: string[],
-  renderer: Renderer
+  renderer: Renderer,
 ): string {
   const className = `${serviceName}Extensions`;
   const methodName = `Add${serviceName}`;
   const clientClassName = serviceName;
   const interfaces: InterfaceEntry[] = interfaceNames.map((name) => {
     const propertyName = name.startsWith("I") ? name.slice(1) : name;
-    const paramName = propertyName.charAt(0).toLowerCase() + propertyName.slice(1);
+    const paramName =
+      propertyName.charAt(0).toLowerCase() + propertyName.slice(1);
     return { name, propertyName, paramName };
   });
-  const view: ExtensionsView = { className, methodName, clientClassName, interfaces };
+  const view: ExtensionsView = {
+    className,
+    methodName,
+    clientClassName,
+    interfaces,
+  };
   const body = renderer.renderExtensions(view);
   const fileView: FileView = {
     namespace: csNs,
@@ -833,7 +1046,7 @@ function mapType(
   type: Type,
   program: Program,
   models: Map<string, Model>,
-  enums: Map<string, Enum>
+  enums: Map<string, Enum>,
 ): string {
   switch (type.kind) {
     case "Scalar":
@@ -855,7 +1068,10 @@ function mapType(
       // Template instance
       if (m.templateMapper?.args) {
         const args = m.templateMapper.args
-          .filter((a): a is Type => (a as { entityKind?: string }).entityKind === "Type")
+          .filter(
+            (a): a is Type =>
+              (a as { entityKind?: string }).entityKind === "Type",
+          )
           .map((a) => mapType(a, program, models, enums));
         // Array<T> represented as a template instance (unresolved element type) → List<T>
         if (m.name === "Array" && args.length === 1) {
@@ -902,43 +1118,82 @@ function mapScalar(scalar: Scalar, program: Program): string {
 
   const builtin = builtinScalarName(scalar);
   switch (builtin) {
-    case "string": return "string";
-    case "int8": return "sbyte";
-    case "int16": return "short";
-    case "int32": return "int";
-    case "int64": return "long";
-    case "uint8": return "byte";
-    case "uint16": return "ushort";
-    case "uint32": return "uint";
-    case "uint64": return "ulong";
-    case "safeint": return "long";
-    case "float32": return "float";
-    case "float64": return "double";
+    case "string":
+      return "string";
+    case "int8":
+      return "sbyte";
+    case "int16":
+      return "short";
+    case "int32":
+      return "int";
+    case "int64":
+      return "long";
+    case "uint8":
+      return "byte";
+    case "uint16":
+      return "ushort";
+    case "uint32":
+      return "uint";
+    case "uint64":
+      return "ulong";
+    case "safeint":
+      return "long";
+    case "float32":
+      return "float";
+    case "float64":
+      return "double";
     case "decimal":
-    case "decimal128": return "decimal";
-    case "boolean": return "bool";
-    case "bytes": return "byte[]";
+    case "decimal128":
+      return "decimal";
+    case "boolean":
+      return "bool";
+    case "bytes":
+      return "byte[]";
     case "utcDateTime":
-    case "offsetDateTime": return "DateTimeOffset";
-    case "plainDate": return "DateOnly";
-    case "plainTime": return "TimeOnly";
-    case "duration": return "TimeSpan";
-    case "url": return "Uri";
+    case "offsetDateTime":
+      return "DateTimeOffset";
+    case "plainDate":
+      return "DateOnly";
+    case "plainTime":
+      return "TimeOnly";
+    case "duration":
+      return "TimeSpan";
+    case "url":
+      return "Uri";
     case "numeric":
     case "integer":
-    case "float": return "double";
-    default: return "string";
+    case "float":
+      return "double";
+    default:
+      return "string";
   }
 }
 
 const BUILTIN_SCALARS = new Set([
   "string",
-  "int8", "int16", "int32", "int64",
-  "uint8", "uint16", "uint32", "uint64",
-  "safeint", "integer", "float", "float32", "float64",
-  "decimal", "decimal128", "numeric",
-  "boolean", "bytes",
-  "utcDateTime", "offsetDateTime", "plainDate", "plainTime", "duration",
+  "int8",
+  "int16",
+  "int32",
+  "int64",
+  "uint8",
+  "uint16",
+  "uint32",
+  "uint64",
+  "safeint",
+  "integer",
+  "float",
+  "float32",
+  "float64",
+  "decimal",
+  "decimal128",
+  "numeric",
+  "boolean",
+  "bytes",
+  "utcDateTime",
+  "offsetDateTime",
+  "plainDate",
+  "plainTime",
+  "duration",
   "url",
 ]);
 
@@ -956,13 +1211,17 @@ function builtinScalarName(scalar: Scalar): string {
 function isEmittable(model: Model, serviceNsName: string): boolean {
   if (!model.name) return false;
   const ns = model.namespace ? getNamespaceFullName(model.namespace) : "";
-  return ns === serviceNsName || ns.startsWith(`${serviceNsName}.`) || ns === "";
+  return (
+    ns === serviceNsName || ns.startsWith(`${serviceNsName}.`) || ns === ""
+  );
 }
 
 function isEmittableEnum(e: Enum, serviceNsName: string): boolean {
   if (!e.name) return false;
   const ns = e.namespace ? getNamespaceFullName(e.namespace) : "";
-  return ns === serviceNsName || ns.startsWith(`${serviceNsName}.`) || ns === "";
+  return (
+    ns === serviceNsName || ns.startsWith(`${serviceNsName}.`) || ns === ""
+  );
 }
 
 // ─── Name / formatting helpers ───────────────────────────────────────────────
