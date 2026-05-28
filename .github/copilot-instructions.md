@@ -93,6 +93,7 @@ After making any change to the codebase:
 
 2. **Rebuild all TypeSpec examples:**
    ```powershell
+   cd example/simple-api && npm install && tsp compile .
    cd example/versioned-api && npm install && ./build.ps1
    ```
    Run this for every subdirectory under `example/` that contains a `build.ps1`.

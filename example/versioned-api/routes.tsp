@@ -15,7 +15,7 @@ namespace MassiveScale.Sandbox.Api;
 interface Stores {
     @doc("Retrieves a list of all stores.")
     @get
-    list(): PagedResult<Store>;
+    list(@query skip?: int32, @query take?: int32 = 25): PagedResult<Store>;
 
     @doc("Retrieves a specific store by its unique identifier.")
     @get
@@ -47,7 +47,11 @@ interface Stores {
 interface Pets {
     @doc("Retrieves a list of all pets in the specified store.")
     @get
-    list(@path storeId: string): Pet[];
+    list(
+        @path storeId: string,
+        @query skip?: int32,
+        @query take?: int32 = 25,
+    ): Pet[];
 
     @doc("Adds a new pet to the specified store.")
     @post
@@ -59,7 +63,7 @@ interface Pets {
     update(
         @path storeId: string,
         @path petId: string,
-        @body body: MergePatchUpdate<Pet>
+        @body body: MergePatchUpdate<Pet>,
     ): Pet | ErrorResponse;
 
     @doc("Removes a pet from the specified store.")
@@ -82,10 +86,12 @@ interface Customers {
 
     @doc("Creates a new customer with the provided information.")
     @post
-    create(@body body: Customer): {
-        @statusCode statusCode: 201;
-        @body body: Customer;
-    } | ErrorResponse;
+    create(@body body: Customer):
+        | {
+              @statusCode statusCode: 201;
+              @body body: Customer;
+          }
+        | ErrorResponse;
 
     @doc("Updates an existing customer with the provided information. Only the fields included in the request body will be updated.")
     @patch
@@ -95,6 +101,6 @@ interface Customers {
 
     @doc("Deletes a customer by their unique identifier.")
     @removed(Versions.v2_0)
-    @delete    
+    @delete
     delete(@path id: string): void | ErrorResponse;
 }

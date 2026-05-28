@@ -33,6 +33,8 @@ import {
   resolveRequestVisibility,
 } from "@typespec/http";
 import { getAllVersions, getAvailabilityMap, Availability, Version } from "@typespec/versioning";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   createRenderer,
@@ -46,6 +48,7 @@ import {
   FileView,
   CsprojView,
   ExtensionsView,
+  InterfaceEntry,
   TemplateOverrides,
 } from "./renderer.js";
 import { EmitterOptions, createDiagnostic } from "./lib.js";
@@ -67,6 +70,10 @@ export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<voi
     if (!isService(program, service.namespace)) continue;
     if (service.operations.length === 0) continue;
     await emitService(program, service.namespace, service.operations, emitterOutputDir, options, renderer);
+  }
+
+  if (options["dotnet-format"] !== false) {
+    runDotnetFormat(program, emitterOutputDir);
   }
 }
 
@@ -141,6 +148,27 @@ async function deleteGcsFiles(program: Program, dir: string): Promise<void> {
   );
 }
 
+// ─── dotnet format ───────────────────────────────────────────────────────────
+
+function runDotnetFormat(program: Program, outputDir: string): void {
+  // Skip when the output directory doesn't exist on the real filesystem
+  // (e.g. in-memory test harness).
+  if (!existsSync(outputDir)) return;
+
+  const result = spawnSync("dotnet", ["format", outputDir, "--no-restore"], {
+    encoding: "utf-8",
+    stdio: "pipe",
+  });
+
+  if (result.error || (result.status !== null && result.status !== 0)) {
+    const message =
+      result.error?.message ?? result.stderr?.trim() ?? `exited with code ${result.status}`;
+    program.reportDiagnostic(
+      createDiagnostic({ code: "dotnet-format-failed", target: NoTarget, format: { message } })
+    );
+  }
+}
+
 // ─── Service-level orchestration ────────────────────────────────────────────
 
 async function emitService(
@@ -158,7 +186,10 @@ async function emitService(
     : projectName;
   const clientName = options["client-name"] ?? csharpName;
   const baseNs = options["root-namespace"] ?? `${nsFullName}.Client`;
-  const netVersion = options["net-version"] ?? "net8.0";
+  const rawNetVersion = options["net-version"] ?? "net8.0";
+  const netVersionParts = rawNetVersion.split(";").map((v) => v.trim()).filter(Boolean);
+  const netVersion = netVersionParts.join(";");
+  const isMultiTarget = netVersionParts.length > 1;
 
   const nugetDescription = options["nuget-description"] ?? `Refit client for the ${baseNs} API`;
   const nugetTitle = options["nuget-title"] ?? (options["client-name"] !== undefined ? clientName : undefined);
@@ -249,7 +280,7 @@ async function emitService(
       await writeFile(
         program,
         csprojPath,
-        buildCsproj(baseNs, netVersion, deriveNugetVersion(allVersions, options), nugetDescription, nugetTitle, options, renderer)
+        buildCsproj(baseNs, netVersion, isMultiTarget, deriveNugetVersion(allVersions, options), nugetDescription, nugetTitle, options, renderer)
       );
     }
   }
@@ -467,23 +498,35 @@ function buildMethodView(
   const returnType = resolveReturnType(op.responses, program, models, enums);
   const doc = getDoc(program, op.operation);
 
-  const params: string[] = [];
+  const requiredParams: string[] = [];
+  const optionalParams: string[] = [];
 
   for (const param of op.parameters.parameters) {
     const csType = mapType(param.param.type, program, models, enums);
     const csParam = toCsParamName(param.param.name);
+    const isOptional = param.param.optional;
+    const nullSuffix = isOptional ? "?" : "";
+    const defaultSuffix = isOptional ? " = null" : "";
+
+    let paramStr: string;
     if (param.type === "query") {
       const httpName = getQueryParamName(program, param.param) ?? param.param.name;
       if (httpName !== param.param.name) {
-        params.push(`[AliasAs("${httpName}")] ${csType} ${csParam}`);
+        paramStr = `[AliasAs("${httpName}")] ${csType}${nullSuffix} ${csParam}${defaultSuffix}`;
       } else {
-        params.push(`${csType} ${csParam}`);
+        paramStr = `${csType}${nullSuffix} ${csParam}${defaultSuffix}`;
       }
     } else if (param.type === "header") {
       const headerName = getHeaderFieldName(program, param.param);
-      params.push(`[Header("${headerName}")] ${csType} ${csParam}`);
+      paramStr = `[Header("${headerName}")] ${csType}${nullSuffix} ${csParam}${defaultSuffix}`;
     } else {
-      params.push(`${csType} ${csParam}`);
+      paramStr = `${csType}${nullSuffix} ${csParam}${defaultSuffix}`;
+    }
+
+    if (isOptional) {
+      optionalParams.push(paramStr);
+    } else {
+      requiredParams.push(paramStr);
     }
   }
 
@@ -514,10 +557,10 @@ function buildMethodView(
       }
     }
 
-    params.push(`[Body] ${bodyType} body`);
+    requiredParams.push(`[Body] ${bodyType} body`);
   }
 
-  params.push("CancellationToken cancellationToken = default");
+  const params = [...requiredParams, ...optionalParams, "CancellationToken cancellationToken = default"];
 
   return {
     doc: doc ? escapeXml(doc) : undefined,
@@ -731,6 +774,7 @@ function buildEnum(e: Enum, csNs: string, program: Program, renderer: Renderer):
 function buildCsproj(
   rootNs: string,
   netVersion: string,
+  isMultiTarget: boolean,
   nugetVersion: string,
   nugetDescription: string,
   nugetTitle: string | undefined,
@@ -740,6 +784,7 @@ function buildCsproj(
   const view: CsprojView = {
     rootNamespace: rootNs,
     netVersion,
+    isMultiTarget,
     nugetDescription,
     nugetTitle,
     nugetPackageId: options["nuget-package-id"],
@@ -760,7 +805,13 @@ function buildExtensions(
 ): string {
   const className = `${serviceName}Extensions`;
   const methodName = `Add${serviceName}`;
-  const view: ExtensionsView = { className, methodName, interfaces: interfaceNames };
+  const clientClassName = serviceName;
+  const interfaces: InterfaceEntry[] = interfaceNames.map((name) => {
+    const propertyName = name.startsWith("I") ? name.slice(1) : name;
+    const paramName = propertyName.charAt(0).toLowerCase() + propertyName.slice(1);
+    return { name, propertyName, paramName };
+  });
+  const view: ExtensionsView = { className, methodName, clientClassName, interfaces };
   const body = renderer.renderExtensions(view);
   const fileView: FileView = {
     namespace: csNs,

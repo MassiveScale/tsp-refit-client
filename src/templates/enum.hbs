@@ -25,13 +25,13 @@
 
 --}}
 /// <summary>
-{{#if doc}}/// {{doc}}
+{{#if doc}}/// {{docLines doc "/// "}}
 {{/if}}/// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum {{enumName}}
 {
 {{#each members}}{{#if doc}}    /// <summary>
-    /// {{doc}}
+    /// {{docLines doc "    /// "}}
     /// </summary>
 {{/if}}    [EnumMember(Value = "{{memberValue}}")]
     {{name}},

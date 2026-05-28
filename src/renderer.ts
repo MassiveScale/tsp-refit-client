@@ -114,22 +114,39 @@ export interface FileView {
   fileName: string;
 }
 
-/** View model for the generated DI registration extension class. */
+/** One Refit interface entry used in the aggregate client and DI registration. */
+export interface InterfaceEntry {
+  /** C# interface name, e.g. `"IStores"`. */
+  name: string;
+  /** Property name on the aggregate client class, e.g. `"Stores"`. */
+  propertyName: string;
+  /** Constructor parameter name, e.g. `"stores"`. */
+  paramName: string;
+}
+
+/** View model for the generated aggregate client class and DI registration extension class. */
 export interface ExtensionsView {
-  /** Name of the static class, e.g. `"ApiClientExtensions"`. */
+  /** Name of the static extensions class, e.g. `"ApiClientExtensions"`. */
   className: string;
   /** Name of the public extension method, e.g. `"AddApiClient"`. */
   methodName: string;
-  /** Ordered list of Refit interface names to register, e.g. `["ICustomers", "IPets"]`. */
-  interfaces: string[];
+  /** Name of the aggregate client class, e.g. `"ApiClient"`. */
+  clientClassName: string;
+  /** Ordered list of Refit interface entries. */
+  interfaces: InterfaceEntry[];
 }
 
 /** View model for the generated `.csproj` project file. */
 export interface CsprojView {
   /** C# root namespace. */
   rootNamespace: string;
-  /** Target framework moniker, e.g. `"net8.0"`. */
+  /**
+   * Target framework moniker(s). Single: `"net8.0"`. Multi-target: `"net8.0;net9.0"`.
+   * Use together with {@link isMultiTarget} to choose the correct MSBuild element.
+   */
   netVersion: string;
+  /** `true` when `netVersion` contains multiple TFMs; drives `<TargetFrameworks>` vs `<TargetFramework>`. */
+  isMultiTarget: boolean;
   /** NuGet `<Description>`. Always present; defaults to a generated string when not supplied. */
   nugetDescription: string;
   /** NuGet `<PackageId>`. Omitted from the project file when undefined. */
@@ -179,6 +196,14 @@ function createHandlebarsEnv(): typeof Handlebars {
       .join("\n");
   });
 
+  // Splits doc text on newlines and rejoins with `\n{prefix}` so that every
+  // continuation line in a /// <summary> block gets the correct leading prefix.
+  env.registerHelper("docLines", (doc: unknown, prefix: unknown) => {
+    if (typeof doc !== "string" || !doc) return "";
+    const sep = typeof prefix === "string" ? `\n${prefix}` : "\n/// ";
+    return doc.split("\n").join(sep);
+  });
+
   env.registerHelper("isDefined", (value: unknown) => value !== undefined);
 
   env.registerHelper("eq", (a: unknown, b: unknown) => a === b);
@@ -208,7 +233,9 @@ function renderMethodBlock(m: MethodView): string {
   const lines: string[] = [];
   if (m.doc) {
     lines.push(`    /// <summary>`);
-    lines.push(`    /// ${m.doc}`);
+    for (const docLine of m.doc.split("\n")) {
+      lines.push(`    /// ${docLine}`);
+    }
     lines.push(`    /// </summary>`);
   }
   lines.push(`    [${m.verb}("${m.path}")]`);

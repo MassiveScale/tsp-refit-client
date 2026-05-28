@@ -4,7 +4,10 @@ import "./versioning.tsp";
 using Versioning;
 namespace MassiveScale.Sandbox.Api;
 
-@doc("Represents a pet in the pet store.")
+/**
+ * This is a pet.
+ * It is also an example of a multiple-line doc comment.
+ */
 model Pet is EntityBase {
     @doc("The category of the pet, e.g. dog, cat, etc.")
     @visibility(Lifecycle.Read)

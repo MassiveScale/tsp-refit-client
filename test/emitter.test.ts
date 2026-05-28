@@ -153,7 +153,59 @@ describe("emitter", () => {
     ok(csproj, "Expected .csproj file");
     const content = results[csproj];
     ok(content.includes("<PackageReference Include=\"Refit\""), "Expected Refit reference");
-    ok(content.includes("net8.0"), "Expected net8.0 target");
+    ok(content.includes("<TargetFramework>net8.0</TargetFramework>"), "Expected singular TargetFramework for default");
+  });
+
+  it("emits TargetFrameworks (plural) when net-version contains multiple TFMs", async () => {
+    const results = await emit(
+      `
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `,
+      { "net-version": "net8.0;net9.0" }
+    );
+
+    const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
+    ok(csproj, "Expected .csproj file");
+    const content = results[csproj];
+    ok(
+      content.includes("<TargetFrameworks>net8.0;net9.0</TargetFrameworks>"),
+      "Expected plural TargetFrameworks for multi-target"
+    );
+    ok(!content.includes("<TargetFramework>"), "Should not use singular TargetFramework in multi-target mode");
+  });
+
+  it("trims whitespace around semicolons in net-version", async () => {
+    const results = await emit(
+      `
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `,
+      { "net-version": "net8.0 ; net9.0" }
+    );
+
+    const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
+    ok(csproj, "Expected .csproj file");
+    ok(
+      results[csproj].includes("<TargetFrameworks>net8.0;net9.0</TargetFrameworks>"),
+      "Expected whitespace trimmed from TFMs"
+    );
   });
 
   it("defaults to emitting only the latest version for a versioned API", async () => {
@@ -409,6 +461,7 @@ describe("emitter", () => {
     const extFile = Object.keys(results).find((k) => k.endsWith("MyAppClientExtensions.g.cs"));
     ok(extFile, "Expected MyAppClientExtensions.cs");
     const extContent = results[extFile];
+    ok(extContent.includes("class MyAppClient"), "Expected MyAppClient aggregate class");
     ok(extContent.includes("class MyAppClientExtensions"), "Expected MyAppClientExtensions class");
     ok(extContent.includes("AddMyAppClient"), "Expected AddMyAppClient method");
 
@@ -525,6 +578,7 @@ describe("emitter", () => {
     const extFile = Object.keys(results).find((k) => k.endsWith("PetStoreExtensions.g.cs"));
     ok(extFile, "Expected PetStoreExtensions.g.cs");
     const extContent = results[extFile];
+    ok(extContent.includes("class PetStore"), "Expected PetStore aggregate class");
     ok(extContent.includes("class PetStoreExtensions"), "Expected PetStoreExtensions class");
     ok(extContent.includes("AddPetStore"), "Expected AddPetStore method");
 
@@ -610,6 +664,30 @@ describe("emitter", () => {
     ok(content.includes("<PackageTags>refit petstore api</PackageTags>"), "Expected PackageTags");
   });
 
+  it("emits </PropertyGroup> at 2-space indent matching <PropertyGroup>", async () => {
+    const results = await emit(
+      `
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `,
+      { "nuget-version": "1.0.0" }
+    );
+
+    const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
+    ok(csproj, "Expected .csproj");
+    const content = results[csproj];
+    ok(content.includes("  </PropertyGroup>"), "Expected 2-space-indented </PropertyGroup>");
+    ok(!content.includes("    </PropertyGroup>"), "Should not have 4-space-indented </PropertyGroup>");
+  });
+
   it("does not emit NuGet title when neither client-name nor nuget-title is set", async () => {
     const results = await emit(`
       import "@typespec/http";
@@ -651,6 +729,46 @@ describe("emitter", () => {
     const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
     ok(ifaceFile);
     ok(results[ifaceFile].includes("[Body] Item body"), "Interface should use Item directly");
+  });
+
+  // ─── Aggregate client ────────────────────────────────────────────────────────
+
+  it("emits an aggregate client class with one property per interface", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      model Pet { name: string; }
+      model Store { name: string; }
+
+      @route("/pets")
+      interface Pets {
+        @get list(): Pet[];
+      }
+
+      @route("/stores")
+      interface Stores {
+        @get list(): Store[];
+      }
+    `);
+
+    const extFile = Object.keys(results).find((k) => k.endsWith("TestApiClientExtensions.g.cs"));
+    ok(extFile, "Expected TestApiClientExtensions.g.cs");
+    const content = results[extFile];
+
+    ok(content.includes("public class TestApiClient"), "Expected aggregate class declaration");
+    ok(content.includes("public IPets Pets { get; }"), "Expected Pets property");
+    ok(content.includes("public IStores Stores { get; }"), "Expected Stores property");
+    ok(content.includes("IPets pets"), "Expected pets constructor param");
+    ok(content.includes("IStores stores"), "Expected stores constructor param");
+    ok(content.includes("Pets = pets;"), "Expected Pets assignment in constructor");
+    ok(content.includes("Stores = stores;"), "Expected Stores assignment in constructor");
+    ok(content.includes("AddTransient<TestApiClient>()"), "Expected aggregate client registered as transient");
+    ok(content.includes("AddSingleClient<IPets>"), "Expected IPets registered");
+    ok(content.includes("AddSingleClient<IStores>"), "Expected IStores registered");
   });
 
   // ─── NuGet version derivation ─────────────────────────────────────────────
@@ -796,5 +914,165 @@ describe("emitter", () => {
     const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
     ok(csproj, "Expected .csproj");
     ok(results[csproj].includes("<Version>3.2.0</Version>"), "Expected latest version semver with all-versions");
+  });
+
+  // ─── Multi-line doc comment rendering ────────────────────────────────────────
+
+  it("emits all lines of a multi-line model doc with /// prefix", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @doc("First line.\\nSecond line.")
+      model Widget {
+        @doc("Prop first.\\nProp second.")
+        name: string;
+      }
+
+      @route("/widgets")
+      interface Widgets {
+        @get list(): Widget[];
+      }
+    `);
+
+    const modelFile = Object.keys(results).find((k) => k.endsWith("Widget.g.cs"));
+    ok(modelFile, "Expected Widget.g.cs");
+    const content = results[modelFile];
+    ok(content.includes("/// First line."), "Expected first doc line on record");
+    ok(content.includes("/// Second line."), "Expected second doc line on record");
+    ok(!content.includes("Second line.") || content.split("/// Second line.").length >= 2,
+      "Second line must always start with ///");
+    ok(content.includes("/// Prop first."), "Expected first doc line on property");
+    ok(content.includes("/// Prop second."), "Expected second doc line on property");
+  });
+
+  it("emits all lines of a multi-line enum doc with /// prefix", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @doc("Enum first.\\nEnum second.")
+      enum Status {
+        @doc("Member first.\\nMember second.")
+        Active: "active",
+      }
+
+      model Item { status: Status; }
+
+      @route("/items")
+      interface Items {
+        @get list(): Item[];
+      }
+    `);
+
+    const enumFile = Object.keys(results).find((k) => k.endsWith("Status.g.cs"));
+    ok(enumFile, "Expected Status.g.cs");
+    const content = results[enumFile];
+    ok(content.includes("/// Enum first."), "Expected first enum doc line");
+    ok(content.includes("/// Enum second."), "Expected second enum doc line");
+    ok(content.includes("/// Member first."), "Expected first member doc line");
+    ok(content.includes("/// Member second."), "Expected second member doc line");
+  });
+
+  it("emits all lines of a multi-line operation doc with /// prefix", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @doc("Op first.\\nOp second.")
+        @get list(): string[];
+      }
+    `);
+
+    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    ok(ifaceFile, "Expected IItems.g.cs");
+    const content = results[ifaceFile];
+    ok(content.includes("/// Op first."), "Expected first op doc line");
+    ok(content.includes("/// Op second."), "Expected second op doc line");
+  });
+
+  // ─── Optional / nullable parameters ──────────────────────────────────────────
+
+  it("emits optional query params as nullable with default null", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(@query skip?: int32, @query take?: int32): string[];
+      }
+    `);
+
+    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    ok(ifaceFile, "Expected IItems.g.cs");
+    const content = results[ifaceFile];
+    ok(content.includes("int? skip = null"), "Expected optional skip as int? with default null");
+    ok(content.includes("int? take = null"), "Expected optional take as int? with default null");
+  });
+
+  it("emits required query params without nullable suffix", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(@query filter: string): string[];
+      }
+    `);
+
+    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    ok(ifaceFile, "Expected IItems.g.cs");
+    const content = results[ifaceFile];
+    ok(content.includes("string filter"), "Expected required filter as plain string");
+    ok(!content.includes("string? filter"), "Required param should not be nullable");
+    ok(!content.includes("= null"), "Required param should not have null default");
+  });
+
+  it("places optional params after required ones when mixed", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      model Item { name: string; }
+
+      @route("/stores/{storeId}/items")
+      interface Items {
+        @post create(@path storeId: string, @query dryRun?: boolean, @body body: Item): Item;
+      }
+    `);
+
+    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    ok(ifaceFile, "Expected IItems.g.cs");
+    const content = results[ifaceFile];
+    const methodLine = content.split("\n").find((l) => l.includes("CreateAsync("));
+    ok(methodLine, "Expected CreateAsync method");
+    const skipIdx = methodLine!.indexOf("storeId");
+    const bodyIdx = methodLine!.indexOf("[Body]");
+    const dryRunIdx = methodLine!.indexOf("dryRun");
+    ok(skipIdx < bodyIdx, "Required path param storeId must come before required body");
+    ok(bodyIdx < dryRunIdx, "Required body must come before optional dryRun");
+    ok(content.includes("bool? dryRun = null"), "Expected dryRun as bool? with default null");
   });
 });
