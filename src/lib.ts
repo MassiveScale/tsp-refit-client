@@ -96,7 +96,8 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
     },
     "nuget-version": {
       type: "string",
-      description: "NuGet <Version>. Omitted when not set.",
+      description:
+        "NuGet <Version>. When not set, auto-derived from the targeted TypeSpec API version: parsed as semver if possible (e.g. 'v2.1' → '2.1.0'), otherwise formatted as CalVer (YYYY.MM.DD).",
       nullable: true,
     },
     "nuget-authors": {

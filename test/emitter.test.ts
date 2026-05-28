@@ -26,7 +26,7 @@ describe("emitter", () => {
     const ifaceFile = Object.keys(results).find((k) =>
       k.endsWith("IItems.g.cs"),
     );
-    ok(ifaceFile, "Expected IItems.cs to be emitted");
+    ok(ifaceFile, "Expected IItems.g.cs to be emitted");
     const content = results[ifaceFile];
     ok(
       content.includes("public interface IItems"),
@@ -61,7 +61,7 @@ describe("emitter", () => {
     const ifaceFile = Object.keys(results).find((k) =>
       k.endsWith("IItems.g.cs"),
     );
-    ok(ifaceFile, "Expected IItems.cs");
+    ok(ifaceFile, "Expected IItems.g.cs");
     const content = results[ifaceFile];
     ok(content.includes('[Post("/items")]'), "Expected Post attribute");
     ok(content.includes('[Patch("/items/{id}")]'), "Expected Patch attribute");
@@ -150,7 +150,7 @@ describe("emitter", () => {
     const modelFile = Object.keys(results).find((k) =>
       k.endsWith("Widget.g.cs"),
     );
-    ok(modelFile, "Expected Widget.cs to be emitted");
+    ok(modelFile, "Expected Widget.g.cs to be emitted");
     const content = results[modelFile];
     ok(content.includes("public record Widget"), "Expected record declaration");
     ok(content.includes("public string Name"), "Expected Name property");
@@ -277,7 +277,7 @@ describe("emitter", () => {
     ok(!v1File, "v1.0 should not be emitted by default");
     ok(
       iItemsFile,
-      "Expected IItems.cs at root (no version folder in single-version mode)",
+      "Expected IItems.g.cs at root (no version folder in single-version mode)",
     );
     ok(results[iItemsFile!].includes("ListAsync("), "v2 should have ListAsync");
     ok(
@@ -324,7 +324,7 @@ describe("emitter", () => {
 
     ok(!v1File, "No v1.0 folder in single-version mode");
     ok(!v2File, "v2.0 should not be emitted when target-version is v1.0");
-    ok(iItemsFile, "Expected IItems.cs at root");
+    ok(iItemsFile, "Expected IItems.g.cs at root");
     ok(results[iItemsFile!].includes("ListAsync("), "v1 should have ListAsync");
     ok(
       !results[iItemsFile!].includes("CreateAsync("),
@@ -365,8 +365,8 @@ describe("emitter", () => {
       (k) => k.includes("v2.0") && k.endsWith("IItems.g.cs"),
     );
 
-    ok(v1File, "Expected v1.0/IItems.cs");
-    ok(v2File, "Expected v2.0/IItems.cs");
+    ok(v1File, "Expected v1.0/Endpoints/IItems.g.cs");
+    ok(v2File, "Expected v2.0/Endpoints/IItems.g.cs");
     ok(results[v1File].includes("ListAsync("), "v1 should have ListAsync");
     ok(
       !results[v1File].includes("CreateAsync("),
@@ -456,7 +456,7 @@ describe("emitter", () => {
     const requestFile = Object.keys(results).find((k) =>
       k.endsWith("ItemCreateRequest.g.cs"),
     );
-    ok(requestFile, "Expected ItemCreateRequest.cs to be emitted");
+    ok(requestFile, "Expected ItemCreateRequest.g.cs to be emitted");
     const content = results[requestFile];
     ok(
       content.includes("public record ItemCreateRequest"),
@@ -508,7 +508,7 @@ describe("emitter", () => {
     const requestFile = Object.keys(results).find((k) =>
       k.endsWith("ItemUpdateRequest.g.cs"),
     );
-    ok(requestFile, "Expected ItemUpdateRequest.cs to be emitted");
+    ok(requestFile, "Expected ItemUpdateRequest.g.cs to be emitted");
     const content = results[requestFile];
     ok(
       content.includes("public record ItemUpdateRequest"),
@@ -559,7 +559,7 @@ describe("emitter", () => {
     const extFile = Object.keys(results).find((k) =>
       k.endsWith("MyAppClientExtensions.g.cs"),
     );
-    ok(extFile, "Expected MyAppClientExtensions.cs");
+    ok(extFile, "Expected MyAppClientExtensions.g.cs");
     const extContent = results[extFile];
     ok(
       extContent.includes("class MyAppClient"),
@@ -602,7 +602,7 @@ describe("emitter", () => {
     const ifaceFile = Object.keys(results).find((k) =>
       k.endsWith("IItems.g.cs"),
     );
-    ok(ifaceFile, "Expected IItems.cs");
+    ok(ifaceFile, "Expected IItems.g.cs");
     ok(
       results[ifaceFile].includes("namespace TestApi.Client.V2_0"),
       "Expected version in namespace",
@@ -645,8 +645,8 @@ describe("emitter", () => {
     const v2File = Object.keys(results).find(
       (k) => k.includes("v2.0") && k.endsWith("IItems.g.cs"),
     );
-    ok(v1File, "Expected v1.0/IItems.cs");
-    ok(v2File, "Expected v2.0/IItems.cs");
+    ok(v1File, "Expected v1.0/Endpoints/IItems.g.cs");
+    ok(v2File, "Expected v2.0/Endpoints/IItems.g.cs");
     ok(
       results[v1File].includes("namespace TestApi.Client.V1_0"),
       "Expected version in v1 namespace",
