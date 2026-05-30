@@ -223,6 +223,7 @@ async function emitService(
   const netVersion = netVersionParts.join(";");
   const isMultiTarget = netVersionParts.length > 1;
 
+  const rawRoutePrefix = options["route-prefix"] ?? "api/{version}";
   const nugetDescription =
     options["nuget-description"] ?? `Refit client for the ${baseNs} API`;
   const nugetTitle =
@@ -283,6 +284,7 @@ async function emitService(
           version,
           requestTypes,
           renderer,
+          rawRoutePrefix,
         );
         await writeFile(
           program,
@@ -342,6 +344,7 @@ async function emitService(
         undefined,
         requestTypes,
         renderer,
+        rawRoutePrefix,
       );
       await writeFile(
         program,
@@ -488,6 +491,22 @@ export function deriveNugetVersion(
   }
 
   return toCalVer(new Date());
+}
+
+// ─── Route prefix ────────────────────────────────────────────────────────────
+
+function resolveRoutePrefix(
+  prefix: string,
+  version: Version | undefined,
+): string {
+  let resolved = prefix;
+  if (version) {
+    resolved = resolved.replace(/\{version\}/g, version.value);
+  } else {
+    resolved = resolved.replace(/\{version\}/g, "");
+    resolved = resolved.replace(/\/+/g, "/").replace(/\/$/, "");
+  }
+  return resolved;
 }
 
 // ─── Version selection ───────────────────────────────────────────────────────
@@ -642,9 +661,19 @@ function buildInterface(
   version: Version | undefined,
   requestTypes: Map<string, RequestType>,
   renderer: Renderer,
+  rawRoutePrefix: string,
 ): string {
+  const routePrefix = resolveRoutePrefix(rawRoutePrefix, version);
   const methods = ops.map((op) =>
-    buildMethodView(op, program, models, enums, version, requestTypes),
+    buildMethodView(
+      op,
+      program,
+      models,
+      enums,
+      version,
+      requestTypes,
+      routePrefix,
+    ),
   );
   const view: RefitInterfaceView = { interfaceName: csName, doc, methods };
   const body = renderer.renderRefitInterface(view);
@@ -669,9 +698,10 @@ function buildMethodView(
   enums: Map<string, Enum>,
   version: Version | undefined,
   requestTypes: Map<string, RequestType>,
+  routePrefix: string,
 ): MethodView {
   const verb = capitalize(op.verb);
-  const path = op.path;
+  const path = routePrefix ? `${routePrefix}${op.path}` : op.path;
   const methodName = toCsMethodName(op.operation.name);
   const returnType = resolveReturnType(op.responses, program, models, enums);
   const doc = getDoc(program, op.operation);
