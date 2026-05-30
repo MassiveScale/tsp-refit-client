@@ -700,7 +700,9 @@ function buildMethodView(
   routePrefix: string,
 ): MethodView {
   const verb = capitalize(op.verb);
-  const path = routePrefix ? `${routePrefix}${op.path}` : op.path;
+  const path = routePrefix
+    ? `${routePrefix}/${op.path}`.replace(/\/+/g, "/").replace(/\/$/, "")
+    : op.path;
   const methodName = toCsMethodName(op.operation.name);
   const returnType = resolveReturnType(op.responses, program, models, enums);
   const doc = getDoc(program, op.operation);
