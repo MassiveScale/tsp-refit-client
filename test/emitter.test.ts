@@ -32,7 +32,10 @@ describe("emitter", () => {
       content.includes("public interface IItems"),
       "Expected interface declaration",
     );
-    ok(content.includes('[Get("/items")]'), "Expected Get attribute");
+    ok(
+      content.includes('[Get("api/items")]'),
+      "Expected Get attribute with default route prefix",
+    );
     ok(
       content.includes("Task<List<string>>"),
       "Expected Task<List<string>> return type",
@@ -63,11 +66,17 @@ describe("emitter", () => {
     );
     ok(ifaceFile, "Expected IItems.g.cs");
     const content = results[ifaceFile];
-    ok(content.includes('[Post("/items")]'), "Expected Post attribute");
-    ok(content.includes('[Patch("/items/{id}")]'), "Expected Patch attribute");
     ok(
-      content.includes('[Delete("/items/{id}")]'),
-      "Expected Delete attribute",
+      content.includes('[Post("api/items")]'),
+      "Expected Post attribute with default route prefix",
+    );
+    ok(
+      content.includes('[Patch("api/items/{id}")]'),
+      "Expected Patch attribute with default route prefix",
+    );
+    ok(
+      content.includes('[Delete("api/items/{id}")]'),
+      "Expected Delete attribute with default route prefix",
     );
     ok(content.includes("CreateAsync("), "Expected CreateAsync");
     ok(content.includes("UpdateAsync("), "Expected UpdateAsync");
@@ -121,8 +130,148 @@ describe("emitter", () => {
     const content = results[ifaceFile];
     ok(content.includes("string id"), "Expected string id parameter");
     ok(
-      content.includes('[Get("/widgets/{id}")]'),
-      "Expected path in attribute",
+      content.includes('[Get("api/widgets/{id}")]'),
+      "Expected path in attribute with default route prefix",
+    );
+  });
+
+  // ─── route-prefix ────────────────────────────────────────────────────────────
+
+  it("default route-prefix substitutes version value for {version} in versioned APIs", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      import "@typespec/versioning";
+      using Http;
+      using Versioning;
+
+      @service(#{ title: "Test API" })
+      @versioned(Versions)
+      namespace TestApi;
+
+      enum Versions { v1: "v1.0" }
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `);
+
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
+    ok(ifaceFile, "Expected IItems.g.cs");
+    ok(
+      results[ifaceFile].includes('[Get("api/v1.0/items")]'),
+      "Expected {version} replaced with v1.0",
+    );
+  });
+
+  it("default route-prefix strips {version} for unversioned APIs", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `);
+
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
+    ok(ifaceFile, "Expected IItems.g.cs");
+    ok(
+      results[ifaceFile].includes('[Get("api/items")]'),
+      "Expected bare api/ prefix for unversioned API",
+    );
+  });
+
+  it("custom route-prefix is used verbatim without version substitution when no version token", async () => {
+    const results = await emit(
+      `
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `,
+      { "route-prefix": "v1/api" },
+    );
+
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
+    ok(ifaceFile, "Expected IItems.g.cs");
+    ok(
+      results[ifaceFile].includes('[Get("v1/api/items")]'),
+      "Expected custom prefix",
+    );
+  });
+
+  it("trailing slash on route-prefix is normalized — no double slash in emitted path", async () => {
+    const results = await emit(
+      `
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `,
+      { "route-prefix": "api/" },
+    );
+
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
+    ok(ifaceFile, "Expected IItems.g.cs");
+    ok(
+      results[ifaceFile].includes('[Get("api/items")]'),
+      "Expected single slash between prefix and path",
+    );
+    ok(
+      !results[ifaceFile].includes("api//items"),
+      "Should not produce double slash",
+    );
+  });
+
+  it("empty route-prefix emits paths as-is", async () => {
+    const results = await emit(
+      `
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `,
+      { "route-prefix": "" },
+    );
+
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
+    ok(ifaceFile, "Expected IItems.g.cs");
+    ok(
+      results[ifaceFile].includes('[Get("/items")]'),
+      "Expected original path without prefix",
     );
   });
 

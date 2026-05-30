@@ -13,6 +13,7 @@ export interface EmitterOptions {
   "target-version"?: string;
   "all-versions"?: boolean;
   "version-in-namespace"?: boolean;
+  "route-prefix"?: string;
   "emit-project-file"?: boolean;
   "overwrite-project-file"?: boolean;
   "dotnet-format"?: boolean;
@@ -69,6 +70,12 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
       type: "boolean",
       description:
         "When true, appends the sanitized API version to the C# namespace in single-version mode. Ignored when 'all-versions' is true (version is always appended then). Defaults to false.",
+      nullable: true,
+    },
+    "route-prefix": {
+      type: "string",
+      description:
+        "Route prefix prepended to every emitted operation path. Supports the `{version}` token, replaced by the API version value (e.g. 'api/{version}' + 'v1.0' → 'api/v1.0'). When no version is available the token is removed. Set to '' to disable. Defaults to 'api/{version}'.",
       nullable: true,
     },
     "emit-project-file": {
