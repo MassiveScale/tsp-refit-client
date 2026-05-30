@@ -36,6 +36,8 @@ To run a single test file after building:
 node --test dist/test/emitter.test.js
 ```
 
+always run `npm run format` after any change
+
 ---
 
 ## Architecture

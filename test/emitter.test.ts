@@ -231,13 +231,21 @@ describe("emitter", () => {
         @get list(): string[];
       }
     `,
-      { "route-prefix": "api/" }
+      { "route-prefix": "api/" },
     );
 
-    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
     ok(ifaceFile, "Expected IItems.g.cs");
-    ok(results[ifaceFile].includes('[Get("api/items")]'), "Expected single slash between prefix and path");
-    ok(!results[ifaceFile].includes("api//items"), "Should not produce double slash");
+    ok(
+      results[ifaceFile].includes('[Get("api/items")]'),
+      "Expected single slash between prefix and path",
+    );
+    ok(
+      !results[ifaceFile].includes("api//items"),
+      "Should not produce double slash",
+    );
   });
 
   it("empty route-prefix emits paths as-is", async () => {
