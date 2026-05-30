@@ -504,9 +504,8 @@ function resolveRoutePrefix(
     resolved = resolved.replace(/\{version\}/g, version.value);
   } else {
     resolved = resolved.replace(/\{version\}/g, "");
-    resolved = resolved.replace(/\/+/g, "/").replace(/\/$/, "");
   }
-  return resolved;
+  return resolved.replace(/\/+/g, "/").replace(/\/$/, "");
 }
 
 // ─── Version selection ───────────────────────────────────────────────────────

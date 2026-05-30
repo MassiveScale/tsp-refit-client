@@ -217,6 +217,29 @@ describe("emitter", () => {
     );
   });
 
+  it("trailing slash on route-prefix is normalized — no double slash in emitted path", async () => {
+    const results = await emit(
+      `
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `,
+      { "route-prefix": "api/" }
+    );
+
+    const ifaceFile = Object.keys(results).find((k) => k.endsWith("IItems.g.cs"));
+    ok(ifaceFile, "Expected IItems.g.cs");
+    ok(results[ifaceFile].includes('[Get("api/items")]'), "Expected single slash between prefix and path");
+    ok(!results[ifaceFile].includes("api//items"), "Should not produce double slash");
+  });
+
   it("empty route-prefix emits paths as-is", async () => {
     const results = await emit(
       `
