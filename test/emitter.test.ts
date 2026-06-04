@@ -33,7 +33,7 @@ describe("emitter", () => {
       "Expected interface declaration",
     );
     ok(
-      content.includes('[Get("api/items")]'),
+      content.includes('[Get("/api/items")]'),
       "Expected Get attribute with default route prefix",
     );
     ok(
@@ -67,15 +67,15 @@ describe("emitter", () => {
     ok(ifaceFile, "Expected IItems.g.cs");
     const content = results[ifaceFile];
     ok(
-      content.includes('[Post("api/items")]'),
+      content.includes('[Post("/api/items")]'),
       "Expected Post attribute with default route prefix",
     );
     ok(
-      content.includes('[Patch("api/items/{id}")]'),
+      content.includes('[Patch("/api/items/{id}")]'),
       "Expected Patch attribute with default route prefix",
     );
     ok(
-      content.includes('[Delete("api/items/{id}")]'),
+      content.includes('[Delete("/api/items/{id}")]'),
       "Expected Delete attribute with default route prefix",
     );
     ok(content.includes("CreateAsync("), "Expected CreateAsync");
@@ -130,7 +130,7 @@ describe("emitter", () => {
     const content = results[ifaceFile];
     ok(content.includes("string id"), "Expected string id parameter");
     ok(
-      content.includes('[Get("api/widgets/{id}")]'),
+      content.includes('[Get("/api/widgets/{id}")]'),
       "Expected path in attribute with default route prefix",
     );
   });
@@ -161,7 +161,7 @@ describe("emitter", () => {
     );
     ok(ifaceFile, "Expected IItems.g.cs");
     ok(
-      results[ifaceFile].includes('[Get("api/v1.0/items")]'),
+      results[ifaceFile].includes('[Get("/api/v1.0/items")]'),
       "Expected {version} replaced with v1.0",
     );
   });
@@ -185,7 +185,7 @@ describe("emitter", () => {
     );
     ok(ifaceFile, "Expected IItems.g.cs");
     ok(
-      results[ifaceFile].includes('[Get("api/items")]'),
+      results[ifaceFile].includes('[Get("/api/items")]'),
       "Expected bare api/ prefix for unversioned API",
     );
   });
@@ -212,7 +212,7 @@ describe("emitter", () => {
     );
     ok(ifaceFile, "Expected IItems.g.cs");
     ok(
-      results[ifaceFile].includes('[Get("v1/api/items")]'),
+      results[ifaceFile].includes('[Get("/v1/api/items")]'),
       "Expected custom prefix",
     );
   });
@@ -239,7 +239,7 @@ describe("emitter", () => {
     );
     ok(ifaceFile, "Expected IItems.g.cs");
     ok(
-      results[ifaceFile].includes('[Get("api/items")]'),
+      results[ifaceFile].includes('[Get("/api/items")]'),
       "Expected single slash between prefix and path",
     );
     ok(

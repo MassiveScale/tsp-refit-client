@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Generated Refit route attributes now always start with `/` (e.g. `[Get("/api/v1.0/items")]`). Refit 11 enforces that URL paths begin with `/`, so paths without the leading slash caused a `System.ArgumentException` at startup.
+
 ### Changed
 
 - Upgraded generated `Refit` and `Refit.HttpClientFactory` NuGet package references from `10.*` to `11.*`.
@@ -15,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `route-prefix` emitter option (default `api/{version}`): prepends a configurable prefix to every emitted route path. The `{version}` token is replaced by the active API version value at emit time (e.g. `api/{version}` + `v1.0` → `[Get("api/v1.0/items")]`). When no version is available the token is removed, producing `api/items`. Set to `""` to emit paths as-is.
+- `route-prefix` emitter option (default `api/{version}`): prepends a configurable prefix to every emitted route path. The `{version}` token is replaced by the active API version value at emit time (e.g. `api/{version}` + `v1.0` → `[Get("/api/v1.0/items")]`). When no version is available the token is removed, producing `/api/items`. Set to `""` to emit paths as-is.
 
 ## [1.0.0-beta.5] - 2026-05-27
 
