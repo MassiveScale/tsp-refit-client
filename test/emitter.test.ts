@@ -302,11 +302,23 @@ describe("emitter", () => {
     ok(modelFile, "Expected Widget.g.cs to be emitted");
     const content = results[modelFile];
     ok(content.includes("public record Widget"), "Expected record declaration");
+    ok(
+      content.includes('[JsonPropertyName("name")]'),
+      "Expected JsonPropertyName for name",
+    );
     ok(content.includes("public string Name"), "Expected Name property");
+    ok(
+      content.includes('[JsonPropertyName("count")]'),
+      "Expected JsonPropertyName for count",
+    );
     ok(content.includes("public int Count"), "Expected int Count property");
     ok(content.includes("/// <summary>"), "Expected opening summary tag");
     ok(content.includes("/// A widget."), "Expected doc comment text");
     ok(content.includes("/// </summary>"), "Expected closing summary tag");
+    ok(
+      content.includes("using System.Text.Json.Serialization"),
+      "Expected System.Text.Json.Serialization using",
+    );
   });
 
   it("emits a .csproj file", async () => {
@@ -1510,5 +1522,406 @@ describe("emitter", () => {
       content.includes("bool? dryRun = null"),
       "Expected dryRun as bool? with default null",
     );
+  });
+
+  // ─── @clientName ─────────────────────────────────────────────────────────────
+
+  it("@clientName on a model property uses the TypeSpec name as [JsonPropertyName]", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      import "@massivescale/tsp-refit-client";
+      using Http;
+      using MassiveScale.TspRefitClient;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      model Widget {
+        @clientName("CorrelationIdentifier")
+        traceId: string;
+      }
+
+      @route("/widgets")
+      interface Widgets {
+        @get list(): Widget[];
+      }
+    `);
+
+    const modelFile = Object.keys(results).find((k) =>
+      k.endsWith("Widget.g.cs"),
+    );
+    ok(modelFile, "Expected Widget.g.cs");
+    const content = results[modelFile];
+    ok(
+      content.includes('[JsonPropertyName("traceId")]'),
+      "Expected JsonPropertyName to use original TypeSpec name",
+    );
+    ok(
+      content.includes("public string CorrelationIdentifier"),
+      "Expected C# property to use @clientName override",
+    );
+  });
+
+  it("@clientName on a model overrides the emitted record name and file name", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      import "@massivescale/tsp-refit-client";
+      using Http;
+      using MassiveScale.TspRefitClient;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @clientName("Pet")
+      model Animal { id: string; }
+
+      @route("/animals")
+      interface Animals {
+        @get list(): Animal[];
+      }
+    `);
+
+    const petFile = Object.keys(results).find((k) => k.endsWith("Pet.g.cs"));
+    ok(petFile, "Expected Pet.g.cs (clientName override)");
+    ok(
+      results[petFile].includes("public record Pet"),
+      "Expected record name Pet",
+    );
+    const animalFile = Object.keys(results).find((k) =>
+      k.endsWith("Animal.g.cs"),
+    );
+    ok(!animalFile, "Animal.g.cs should not exist when clientName is Pet");
+
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IAnimals.g.cs"),
+    );
+    ok(ifaceFile, "Expected IAnimals.g.cs");
+    ok(
+      results[ifaceFile].includes("Task<List<Pet>>"),
+      "Expected Pet type reference in interface",
+    );
+  });
+
+  it("@clientName on an enum overrides the emitted enum name and file name", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      import "@massivescale/tsp-refit-client";
+      using Http;
+      using MassiveScale.TspRefitClient;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @clientName("Color")
+      enum Colour { red, green, blue }
+
+      model Widget { color: Colour; }
+
+      @route("/widgets")
+      interface Widgets {
+        @get list(): Widget[];
+      }
+    `);
+
+    const colorFile = Object.keys(results).find((k) =>
+      k.endsWith("Color.g.cs"),
+    );
+    ok(colorFile, "Expected Color.g.cs (clientName override)");
+    ok(
+      results[colorFile].includes("public enum Color"),
+      "Expected enum name Color",
+    );
+    const colourFile = Object.keys(results).find((k) =>
+      k.endsWith("Colour.g.cs"),
+    );
+    ok(!colourFile, "Colour.g.cs should not exist when clientName is Color");
+  });
+
+  it("@clientName on an interface overrides the C# interface name", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      import "@massivescale/tsp-refit-client";
+      using Http;
+      using MassiveScale.TspRefitClient;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @clientName("Widgets")
+      @route("/things")
+      interface Things {
+        @get list(): string[];
+      }
+    `);
+
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IWidgets.g.cs"),
+    );
+    ok(ifaceFile, "Expected IWidgets.g.cs (clientName override)");
+    ok(
+      results[ifaceFile].includes("public interface IWidgets"),
+      "Expected interface named IWidgets",
+    );
+    const thingsFile = Object.keys(results).find((k) =>
+      k.endsWith("IThings.g.cs"),
+    );
+    ok(!thingsFile, "IThings.g.cs should not exist when clientName is Widgets");
+  });
+
+  it("@clientName on an operation overrides the C# method name", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      import "@massivescale/tsp-refit-client";
+      using Http;
+      using MassiveScale.TspRefitClient;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @clientName("search")
+        @get list(): string[];
+      }
+    `);
+
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
+    ok(ifaceFile, "Expected IItems.g.cs");
+    const content = results[ifaceFile];
+    ok(content.includes("SearchAsync("), "Expected SearchAsync method name");
+    ok(!content.includes("ListAsync("), "ListAsync should not appear");
+  });
+
+  it("reports an error for empty or whitespace @clientName values", async () => {
+    const [, diags] = await emitWithDiagnostics(`
+      import "@typespec/http";
+      import "@massivescale/tsp-refit-client";
+      using Http;
+      using MassiveScale.TspRefitClient;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @clientName("   ")
+      model Widget { id: string; }
+
+      @route("/widgets")
+      interface Widgets {
+        @get list(): Widget[];
+      }
+    `);
+
+    ok(
+      diags.some(
+        (d) => d.code === "@massivescale/tsp-refit-client/invalid-client-name",
+      ),
+      "Expected invalid-client-name diagnostic",
+    );
+  });
+
+  it("reports an error when model and enum collide on output file name", async () => {
+    const [, diags] = await emitWithDiagnostics(`
+      import "@typespec/http";
+      import "@massivescale/tsp-refit-client";
+      using Http;
+      using MassiveScale.TspRefitClient;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @clientName("Shared")
+      model Animal {
+        id: string;
+        color: Colour;
+      }
+
+      @clientName("Shared")
+      enum Colour { red }
+
+      @route("/animals")
+      interface Animals {
+        @get list(): Animal[];
+      }
+    `);
+
+    ok(
+      diags.some(
+        (d) =>
+          d.code === "@massivescale/tsp-refit-client/output-name-collision",
+      ),
+      "Expected output-name-collision diagnostic",
+    );
+  });
+
+  // ─── @access ─────────────────────────────────────────────────────────────────
+
+  it("@access(Access.internal) on a model emits internal record", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      import "@massivescale/tsp-refit-client";
+      using Http;
+      using MassiveScale.TspRefitClient;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @access(Access.internal)
+      model Widget { id: string; }
+
+      @route("/widgets")
+      interface Widgets {
+        @get list(): Widget[];
+      }
+    `);
+
+    const modelFile = Object.keys(results).find((k) =>
+      k.endsWith("Widget.g.cs"),
+    );
+    ok(modelFile, "Expected Widget.g.cs");
+    ok(
+      results[modelFile].includes("internal record Widget"),
+      "Expected internal record",
+    );
+    ok(
+      !results[modelFile].includes("public record Widget"),
+      "Should not contain public record",
+    );
+  });
+
+  it("@access(Access.internal) on an enum emits internal enum", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      import "@massivescale/tsp-refit-client";
+      using Http;
+      using MassiveScale.TspRefitClient;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @access(Access.internal)
+      enum Status { active, inactive }
+
+      model Widget { status: Status; }
+
+      @route("/widgets")
+      interface Widgets {
+        @get list(): Widget[];
+      }
+    `);
+
+    const enumFile = Object.keys(results).find((k) =>
+      k.endsWith("Status.g.cs"),
+    );
+    ok(enumFile, "Expected Status.g.cs");
+    ok(
+      results[enumFile].includes("internal enum Status"),
+      "Expected internal enum",
+    );
+    ok(
+      !results[enumFile].includes("public enum Status"),
+      "Should not contain public enum",
+    );
+  });
+
+  it("@access(Access.internal) on an interface emits internal interface", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      import "@massivescale/tsp-refit-client";
+      using Http;
+      using MassiveScale.TspRefitClient;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @access(Access.internal)
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `);
+
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
+    ok(ifaceFile, "Expected IItems.g.cs");
+    ok(
+      results[ifaceFile].includes("internal interface IItems"),
+      "Expected internal interface",
+    );
+    ok(
+      !results[ifaceFile].includes("public interface IItems"),
+      "Should not contain public interface",
+    );
+  });
+
+  it("@access(Access.public) explicitly keeps public modifier", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      import "@massivescale/tsp-refit-client";
+      using Http;
+      using MassiveScale.TspRefitClient;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @access(Access.public)
+      model Widget { id: string; }
+
+      @route("/widgets")
+      interface Widgets {
+        @get list(): Widget[];
+      }
+    `);
+
+    const modelFile = Object.keys(results).find((k) =>
+      k.endsWith("Widget.g.cs"),
+    );
+    ok(modelFile, "Expected Widget.g.cs");
+    ok(
+      results[modelFile].includes("public record Widget"),
+      "Expected public record when Access.public is explicit",
+    );
+  });
+
+  // ─── clean-output-dir ────────────────────────────────────────────────────────
+
+  it("clean-output-dir: false is accepted without diagnostics", async () => {
+    const [, diags] = await emitWithDiagnostics(
+      `
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `,
+      { "clean-output-dir": false },
+    );
+    strictEqual(diags.length, 0, "Expected no diagnostics");
+  });
+
+  it("clean-output-dir: true is accepted without diagnostics", async () => {
+    const [, diags] = await emitWithDiagnostics(
+      `
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `,
+      { "clean-output-dir": true },
+    );
+    strictEqual(diags.length, 0, "Expected no diagnostics");
   });
 });

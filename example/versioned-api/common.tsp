@@ -1,3 +1,7 @@
+import "@massivescale/tsp-refit-client";
+
+using MassiveScale.TspRefitClient;
+
 namespace MassiveScale.Sandbox.Api;
 
 /** Strips server-generated fields for create operations. Alias of T for simplicity. */
@@ -6,6 +10,7 @@ alias Create<T> = T;
 /**
  * Base model for all entities in the API.
  */
+@clientName("BaseEntity")
 model EntityBase {
     @doc("Unique identifier of the entity.")
     @key
@@ -34,6 +39,7 @@ model ErrorResponse {
     message: string;
 
     @doc("Correlation id for the request that resulted in the error.")
+    @clientName("correlationId")
     trace: string;
 
     @doc("An optional array of inner errors that provide more details about the error.")

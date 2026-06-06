@@ -40,6 +40,7 @@ options:
 | `route-prefix`           | `string`  | `api/{version}`                               | Prefix prepended to every emitted route path. The `{version}` token is replaced by the API version value (e.g. `api/{version}` + `v1.0` → `api/v1.0/items`). When no version is available, `{version}` is removed (`api/items`). Set to `""` to disable. |
 | `emit-project-file`      | `boolean` | `true`                                        | Set to `false` to skip `.csproj` generation.                                                                                                                                                                                                             |
 | `overwrite-project-file` | `boolean` | `false`                                       | When `false`, the `.csproj` is only written if it does not already exist.                                                                                                                                                                                |
+| `clean-output-dir`       | `boolean` | `true`                                        | When `true` (default), all `*.g.cs` files in the output directory are deleted before emitting. Non-generated files and project files are preserved. Set to `false` to skip the cleanup pass.                                                             |
 | `dotnet-format`          | `boolean` | `true`                                        | When `true`, run `dotnet format --no-restore` on the output directory after emitting. Set to `false` to skip formatting (e.g. in CI pipelines where formatting is handled separately).                                                                   |
 | `nuget-package-id`       | `string`  | —                                             | NuGet `<PackageId>`.                                                                                                                                                                                                                                     |
 | `nuget-version`          | `string`  | Auto-derived from TypeSpec version            | NuGet `<Version>`. When not set, derived from the targeted TypeSpec API version: parsed as semver if possible (e.g. `v2.1` → `2.1.0`), otherwise formatted as CalVer (`YYYY.MM.DD`).                                                                     |
@@ -48,6 +49,51 @@ options:
 | `nuget-title`            | `string`  | Value of `client-name` (if set), else omitted | NuGet `<Title>`.                                                                                                                                                                                                                                         |
 | `nuget-tags`             | `string`  | —                                             | NuGet `<PackageTags>` (space-separated).                                                                                                                                                                                                                 |
 | `templates`              | `object`  | —                                             | Override individual built-in Handlebars templates. Keys: `file`, `record`, `enum`, `refit-interface`, `csproj`, `extensions`.                                                                                                                            |
+
+### Decorators
+
+Import the library and bring the namespace into scope to use the decorators:
+
+```typespec
+import "@massivescale/tsp-refit-client";
+using MassiveScale.TspRefitClient;
+```
+
+#### `@clientName(name)`
+
+Overrides the C# identifier used for the decorated element in the emitted output.
+
+| Target           | Effect                                                                                         |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| `model`          | Replaces the record name and file name (e.g. `Animal` → `Pet.g.cs` / `public record Pet`).     |
+| `enum`           | Replaces the enum name and file name.                                                          |
+| `interface`      | Replaces the name portion of the C# interface (the `I` prefix is still prepended).             |
+| `op`             | Replaces the base method name (the `Async` suffix is still appended, first letter uppercased). |
+| `model property` | Replaces the C# property name (PascalCase conversion is still applied).                        |
+
+```typespec
+@clientName("Pet")
+model Animal { id: string; }
+
+interface Animals {
+  @clientName("search")
+  @get list(): Animal[];
+}
+```
+
+#### `@access(Access.public | Access.internal)`
+
+Controls the C# access modifier on the emitted type declaration. Defaults to `public`.
+
+```typespec
+@access(Access.internal)
+model InternalDto { value: string; }
+
+@access(Access.internal)
+interface SecretEndpoints {
+  @get read(): InternalDto;
+}
+```
 
 Then compile your TypeSpec definition:
 

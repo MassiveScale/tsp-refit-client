@@ -57,6 +57,11 @@ import {
   TemplateOverrides,
 } from "./renderer.js";
 import { EmitterOptions, createDiagnostic } from "./lib.js";
+import { getClientName, getAccess } from "./decorators.js";
+
+type OutputNameOwner = {
+  label: string;
+};
 
 // ─── Entry point ────────────────────────────────────────────────────────────
 
@@ -66,7 +71,9 @@ export async function $onEmit(
   const { program, emitterOutputDir, options } = context;
   if (program.compilerOptions.noEmit) return;
 
-  await deleteGcsFiles(program, emitterOutputDir);
+  if (options["clean-output-dir"] !== false) {
+    await deleteGcsFiles(program, emitterOutputDir);
+  }
 
   const renderer = buildRenderer(program, options);
 
@@ -233,6 +240,7 @@ async function emitService(
 
   const models = new Map<string, Model>();
   const enums = new Map<string, Enum>();
+  const modelOutputOwners = new Map<string, OutputNameOwner>();
 
   // Group operations by container (Interface or Namespace)
   const byContainer = new Map<
@@ -243,9 +251,12 @@ async function emitService(
     const c = op.container;
     const key =
       c.kind === "Interface" ? c.name : `__ns_${(c as Namespace).name}`;
-    const name = c.kind === "Interface" ? c.name : serviceNs.name;
+    const baseName =
+      c.kind === "Interface"
+        ? (getClientName(program, c) ?? c.name)
+        : serviceNs.name;
     if (!byContainer.has(key))
-      byContainer.set(key, { name, container: c, ops: [] });
+      byContainer.set(key, { name: baseName, container: c, ops: [] });
     byContainer.get(key)!.ops.push(op);
   }
 
@@ -273,11 +284,13 @@ async function emitService(
         if (vOps.length === 0) continue;
         vInterfaceNames.push(`I${name}`);
         const containerDoc = getDoc(program, container);
+        const containerAccess = getAccess(program, container) ?? "public";
         const content = buildInterface(
           `I${name}`,
           vNs,
           vOps,
           containerDoc,
+          containerAccess,
           program,
           models,
           enums,
@@ -333,11 +346,13 @@ async function emitService(
     for (const { name, container, ops } of byContainer.values()) {
       interfaceNames.push(`I${name}`);
       const containerDoc = getDoc(program, container);
+      const containerAccess = getAccess(program, container) ?? "public";
       const content = buildInterface(
         `I${name}`,
         baseNs,
         ops,
         containerDoc,
+        containerAccess,
         program,
         models,
         enums,
@@ -387,6 +402,18 @@ async function emitService(
   // Emit models and enums
   for (const [, model] of models) {
     if (!isEmittable(model, nsFullName)) continue;
+    const recordFileName = getClientName(program, model) ?? model.name!;
+    if (
+      !tryReserveModelOutputName(
+        program,
+        modelOutputOwners,
+        recordFileName,
+        `model ${model.name!}`,
+        model,
+      )
+    ) {
+      continue;
+    }
     const content = buildRecord(
       model,
       baseNs,
@@ -397,16 +424,28 @@ async function emitService(
     );
     await writeFile(
       program,
-      resolvePath(outputDir, "Models", `${model.name}.g.cs`),
+      resolvePath(outputDir, "Models", `${recordFileName}.g.cs`),
       content,
     );
   }
   for (const [, e] of enums) {
     if (!isEmittableEnum(e, nsFullName)) continue;
+    const enumFileName = getClientName(program, e) ?? e.name;
+    if (
+      !tryReserveModelOutputName(
+        program,
+        modelOutputOwners,
+        enumFileName,
+        `enum ${e.name}`,
+        e,
+      )
+    ) {
+      continue;
+    }
     const content = buildEnum(e, baseNs, program, renderer);
     await writeFile(
       program,
-      resolvePath(outputDir, "Models", `${e.name}.g.cs`),
+      resolvePath(outputDir, "Models", `${enumFileName}.g.cs`),
       content,
     );
   }
@@ -432,6 +471,33 @@ async function emitService(
       );
     }
   }
+}
+
+function tryReserveModelOutputName(
+  program: Program,
+  owners: Map<string, OutputNameOwner>,
+  name: string,
+  ownerLabel: string,
+  target: Type,
+): boolean {
+  const existing = owners.get(name);
+  if (!existing) {
+    owners.set(name, { label: ownerLabel });
+    return true;
+  }
+
+  program.reportDiagnostic(
+    createDiagnostic({
+      code: "output-name-collision",
+      target,
+      format: {
+        name,
+        first: existing.label,
+        second: ownerLabel,
+      },
+    }),
+  );
+  return false;
 }
 
 // ─── NuGet version derivation ────────────────────────────────────────────────
@@ -654,6 +720,7 @@ function buildInterface(
   csNs: string,
   ops: HttpOperation[],
   doc: string | undefined,
+  access: string,
   program: Program,
   models: Map<string, Model>,
   enums: Map<string, Enum>,
@@ -674,7 +741,12 @@ function buildInterface(
       routePrefix,
     ),
   );
-  const view: RefitInterfaceView = { interfaceName: csName, doc, methods };
+  const view: RefitInterfaceView = {
+    interfaceName: csName,
+    doc,
+    access,
+    methods,
+  };
   const body = renderer.renderRefitInterface(view);
   const fileView: FileView = {
     namespace: csNs,
@@ -704,7 +776,9 @@ function buildMethodView(
     ? `${routePrefix}/${op.path}`.replace(/\/+/g, "/").replace(/\/$/, "")
     : op.path;
   const path = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
-  const methodName = toCsMethodName(op.operation.name);
+  const baseMethodName =
+    getClientName(program, op.operation) ?? op.operation.name;
+  const methodName = toCsMethodName(baseMethodName);
   const returnType = resolveReturnType(op.responses, program, models, enums);
   const doc = getDoc(program, op.operation);
 
@@ -847,12 +921,13 @@ function buildPropertyViews(
     const propDoc = getDoc(program, prop);
     const csType = mapType(prop.type, program, models, enums);
     const nullable = prop.optional ? "?" : "";
-    const propName = toCsPropName(prop.name);
+    const propName = toCsPropName(getClientName(program, prop) ?? prop.name);
     const defaultVal = prop.optional ? undefined : defaultForTypeRaw(csType);
     result.push({
       doc: propDoc ? escapeXml(propDoc) : undefined,
       type: `${csType}${nullable}`,
       name: propName,
+      jsonPropertyName: prop.name,
       defaultValue: defaultVal,
     });
   }
@@ -871,11 +946,13 @@ function buildRecord(
   const genericSuffix =
     typeParams.length > 0 ? `<${typeParams.join(", ")}>` : "";
   const doc = getDoc(program, model);
+  const recordName = getClientName(program, model) ?? model.name!;
 
   const recordView: RecordView = {
     doc: doc ? escapeXml(doc) : undefined,
-    recordName: model.name!,
+    recordName,
     genericSuffix,
+    access: getAccess(program, model) ?? "public",
     properties: buildPropertyViews(
       flattenProperties(model),
       program,
@@ -887,9 +964,13 @@ function buildRecord(
   const body = renderer.renderRecord(recordView);
   const fileView: FileView = {
     namespace: csNs,
-    usings: sortUsings(["System", "System.Collections.Generic"]),
+    usings: sortUsings([
+      "System",
+      "System.Collections.Generic",
+      "System.Text.Json.Serialization",
+    ]),
     body,
-    fileName: `${model.name}.g.cs`,
+    fileName: `${recordName}.g.cs`,
   };
   return renderer.renderFile(fileView);
 }
@@ -908,13 +989,18 @@ function buildFilteredRecord(
     doc: doc ? escapeXml(doc) : undefined,
     recordName: name,
     genericSuffix: "",
+    access: "public",
     properties: buildPropertyViews(props, program, models, enums),
   };
 
   const body = renderer.renderRecord(recordView);
   const fileView: FileView = {
     namespace: csNs,
-    usings: sortUsings(["System", "System.Collections.Generic"]),
+    usings: sortUsings([
+      "System",
+      "System.Collections.Generic",
+      "System.Text.Json.Serialization",
+    ]),
     body,
     fileName: `${name}.g.cs`,
   };
@@ -976,6 +1062,7 @@ function buildEnum(
   renderer: Renderer,
 ): string {
   const doc = getDoc(program, e);
+  const enumName = getClientName(program, e) ?? e.name;
 
   const members: EnumMemberView[] = [];
   for (const [, member] of e.members) {
@@ -991,7 +1078,8 @@ function buildEnum(
 
   const enumView: EnumView = {
     doc: doc ? escapeXml(doc) : undefined,
-    enumName: e.name,
+    enumName,
+    access: getAccess(program, e) ?? "public",
     members,
   };
 
@@ -1003,7 +1091,7 @@ function buildEnum(
       "System.Text.Json.Serialization",
     ]),
     body,
-    fileName: `${e.name}.g.cs`,
+    fileName: `${enumName}.g.cs`,
   };
   return renderer.renderFile(fileView);
 }
@@ -1112,17 +1200,18 @@ function mapType(
         const decl = m.namespace?.models.get(m.name);
         if (decl) models.set(m.name, decl);
         else models.set(m.name, m);
-        return args.length > 0 ? `${m.name}<${args.join(", ")}>` : m.name;
+        const csName = getClientName(program, decl ?? m) ?? m.name;
+        return args.length > 0 ? `${csName}<${args.join(", ")}>` : csName;
       }
 
       models.set(m.name, m);
-      return m.name;
+      return getClientName(program, m) ?? m.name;
     }
 
     case "Enum": {
       const e = type as Enum;
       if (e.name) enums.set(e.name, e);
-      return e.name || "string";
+      return e.name ? (getClientName(program, e) ?? e.name) : "string";
     }
 
     case "Union":

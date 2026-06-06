@@ -49,6 +49,8 @@ export interface PropertyView {
   type: string;
   /** PascalCase property name. */
   name: string;
+  /** JSON wire name written to `[JsonPropertyName("...")]`, e.g. `"firstName"`. Always the original TypeSpec property name. */
+  jsonPropertyName: string;
   /** Default initializer expression (without `= ` and `;`), e.g. `"default!"`, `"[]"`. */
   defaultValue?: string;
 }
@@ -63,6 +65,8 @@ export interface RecordView {
   genericSuffix: string;
   /** Ordered list of property view models. */
   properties: PropertyView[];
+  /** C# access modifier: `"public"` (default) or `"internal"`. */
+  access: string;
 }
 
 /** View model for a single C# enum member. */
@@ -83,6 +87,8 @@ export interface EnumView {
   enumName: string;
   /** Ordered list of enum member view models. */
   members: EnumMemberView[];
+  /** C# access modifier: `"public"` (default) or `"internal"`. */
+  access: string;
 }
 
 /** View model for a single Refit interface method. */
@@ -109,6 +115,8 @@ export interface RefitInterfaceView {
   doc?: string;
   /** Ordered list of method view models. */
   methods: MethodView[];
+  /** C# access modifier: `"public"` (default) or `"internal"`. */
+  access: string;
 }
 
 /** View model passed to the `file` template — wraps any inner body with the file header. */
@@ -305,6 +313,7 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
       return refitInterfaceTemplate({
         interfaceName: view.interfaceName,
         doc: view.doc,
+        access: view.access,
         methodsBlock,
       });
     },
