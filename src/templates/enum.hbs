@@ -28,7 +28,7 @@
 {{#if doc}}/// {{docLines doc "/// "}}
 {{/if}}/// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum {{enumName}}
+{{access}} enum {{enumName}}
 {
 {{#each members}}{{#if doc}}    /// <summary>
     /// {{docLines doc "    /// "}}

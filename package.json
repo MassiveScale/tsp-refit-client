@@ -1,10 +1,12 @@
 {
   "name": "@massivescale/tsp-refit-client",
-  "version": "1.0.0-beta.6",
+  "version": "0.7.0",
   "type": "module",
   "main": "dist/src/index.js",
+  "tspMain": "lib/main.tsp",
   "exports": {
     ".": {
+      "typespec": "./lib/main.tsp",
       "types": "./dist/src/index.d.ts",
       "default": "./dist/src/index.js"
     },

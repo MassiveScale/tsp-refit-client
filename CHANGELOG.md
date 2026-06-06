@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-06
+
+### Added
+
+- `@clientName(name)` decorator: overrides the C# name used for a model (`record`), enum, interface (the `I` prefix is still added), operation (the `Async` suffix is still added), or model property. Import `@massivescale/tsp-refit-client` and `using MassiveScale.TspRefitClient` to use it. When applied to a model property the original TypeSpec name is still used as the `[JsonPropertyName]` wire name.
+- Generated model records now emit `[JsonPropertyName("...")]` on every property, using the original TypeSpec property name as the JSON wire name. `using System.Text.Json.Serialization` is added automatically to all generated record files.
+- `@access(Access.public | Access.internal)` decorator: controls the C# access modifier on emitted types (models, enums, and interfaces). Defaults to `public`. Import `@massivescale/tsp-refit-client` and `using MassiveScale.TspRefitClient` to use it.
+- `clean-output-dir` emitter option (default `true`): when `true` (the existing default behaviour), all `*.g.cs` files are deleted from the output directory before emitting. Set to `false` to skip the cleanup pass.
+
 ### Fixed
 
 - Generated Refit route attributes now always start with `/` (e.g. `[Get("/api/v1.0/items")]`). Refit 11 enforces that URL paths begin with `/`, so paths without the leading slash caused a `System.ArgumentException` at startup.

@@ -16,6 +16,7 @@ export interface EmitterOptions {
   "route-prefix"?: string;
   "emit-project-file"?: boolean;
   "overwrite-project-file"?: boolean;
+  "clean-output-dir"?: boolean;
   "dotnet-format"?: boolean;
   "nuget-package-id"?: string;
   "nuget-version"?: string;
@@ -88,6 +89,12 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
       type: "boolean",
       description:
         "When false (default), the .csproj is only written if it does not already exist. Set to true to always overwrite it.",
+      nullable: true,
+    },
+    "clean-output-dir": {
+      type: "boolean",
+      description:
+        "When true (default), delete all '*.g.cs' files in 'emitter-output-dir' before emitting. Non-generated files and project files are preserved. Set to false to skip cleanup.",
       nullable: true,
     },
     "dotnet-format": {

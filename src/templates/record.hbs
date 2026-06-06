@@ -22,6 +22,7 @@
     .doc            —   optional XML <summary> text (pre-escaped; may be falsy)
     .type           —   C# type string incl. optional "?", e.g. "string", "int?"
     .name           —   PascalCase property name, e.g. "FirstName"
+    .jsonPropertyName — JSON wire name for [JsonPropertyName("...")], e.g. "firstName"
     .defaultValue   —   default initializer expression (may be falsy), e.g.
                         "default!" or "[]". Written as `= <defaultValue>;`.
 
@@ -34,11 +35,13 @@
 /// <summary>
 {{#if doc}}/// {{docLines doc "/// "}}
 {{/if}}/// </summary>
-public record {{recordName}}{{genericSuffix}}
+{{access}} record {{recordName}}{{genericSuffix}}
 {
 {{#each properties}}{{#if doc}}    /// <summary>
     /// {{docLines doc "    /// "}}
     /// </summary>
-{{/if}}    public {{type}} {{name}} { get; init; }{{#if defaultValue}} = {{defaultValue}};{{/if}}
+{{/if}}    [JsonPropertyName("{{jsonPropertyName}}")]
+    public {{type}} {{name}} { get; init; }{{#if defaultValue}} = {{defaultValue}};{{/if}}
+    
 {{/each}}
 }
