@@ -202,6 +202,24 @@ export const $lib = createTypeSpecLibrary({
         default: paramMessage`dotnet format failed: ${"message"}`,
       },
     },
+    "invalid-client-name": {
+      severity: "error",
+      messages: {
+        default: "@clientName(name) requires a non-empty, non-whitespace name.",
+      },
+    },
+    "invalid-access-modifier": {
+      severity: "error",
+      messages: {
+        default: paramMessage`Unsupported access modifier "${"value"}". Use Access.public or Access.internal.`,
+      },
+    },
+    "output-name-collision": {
+      severity: "error",
+      messages: {
+        default: paramMessage`Generated file name collision for "${"name"}.g.cs" in Models: ${"first"} and ${"second"}.`,
+      },
+    },
   },
   emitter: {
     options: EmitterOptionsSchema,

@@ -59,6 +59,10 @@ import {
 import { EmitterOptions, createDiagnostic } from "./lib.js";
 import { getClientName, getAccess } from "./decorators.js";
 
+type OutputNameOwner = {
+  label: string;
+};
+
 // ─── Entry point ────────────────────────────────────────────────────────────
 
 export async function $onEmit(
@@ -236,6 +240,7 @@ async function emitService(
 
   const models = new Map<string, Model>();
   const enums = new Map<string, Enum>();
+  const modelOutputOwners = new Map<string, OutputNameOwner>();
 
   // Group operations by container (Interface or Namespace)
   const byContainer = new Map<
@@ -397,6 +402,18 @@ async function emitService(
   // Emit models and enums
   for (const [, model] of models) {
     if (!isEmittable(model, nsFullName)) continue;
+    const recordFileName = getClientName(program, model) ?? model.name!;
+    if (
+      !tryReserveModelOutputName(
+        program,
+        modelOutputOwners,
+        recordFileName,
+        `model ${model.name!}`,
+        model,
+      )
+    ) {
+      continue;
+    }
     const content = buildRecord(
       model,
       baseNs,
@@ -405,7 +422,6 @@ async function emitService(
       enums,
       renderer,
     );
-    const recordFileName = getClientName(program, model) ?? model.name!;
     await writeFile(
       program,
       resolvePath(outputDir, "Models", `${recordFileName}.g.cs`),
@@ -414,8 +430,19 @@ async function emitService(
   }
   for (const [, e] of enums) {
     if (!isEmittableEnum(e, nsFullName)) continue;
-    const content = buildEnum(e, baseNs, program, renderer);
     const enumFileName = getClientName(program, e) ?? e.name;
+    if (
+      !tryReserveModelOutputName(
+        program,
+        modelOutputOwners,
+        enumFileName,
+        `enum ${e.name}`,
+        e,
+      )
+    ) {
+      continue;
+    }
+    const content = buildEnum(e, baseNs, program, renderer);
     await writeFile(
       program,
       resolvePath(outputDir, "Models", `${enumFileName}.g.cs`),
@@ -444,6 +471,33 @@ async function emitService(
       );
     }
   }
+}
+
+function tryReserveModelOutputName(
+  program: Program,
+  owners: Map<string, OutputNameOwner>,
+  name: string,
+  ownerLabel: string,
+  target: Type,
+): boolean {
+  const existing = owners.get(name);
+  if (!existing) {
+    owners.set(name, { label: ownerLabel });
+    return true;
+  }
+
+  program.reportDiagnostic(
+    createDiagnostic({
+      code: "output-name-collision",
+      target,
+      format: {
+        name,
+        first: existing.label,
+        second: ownerLabel,
+      },
+    }),
+  );
+  return false;
 }
 
 // ─── NuGet version derivation ────────────────────────────────────────────────

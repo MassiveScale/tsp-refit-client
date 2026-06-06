@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.7] - 2026-06-06
+
+### Fixed
+
+- README `@clientName` operation example now uses valid interface operation syntax (`@get list(): ...`) instead of `@get op list()`.
+- `clientName` decorator library docs now explicitly document `model property` support, matching runtime behavior.
+- `record.hbs` template header comment now describes access-aware output (`{{access}} record`) instead of always `public record`.
+
+### Changed
+
+- `@clientName(name)` now trims the provided value and reports an `invalid-client-name` diagnostic for empty/whitespace-only names.
+- `@access(...)` now validates stored values at runtime and reports `invalid-access-modifier` for unsupported values.
+- `getAccess()` now performs a runtime check and only returns `"public" | "internal"` when the stored value is valid.
+- Emission now detects model/enum output file name collisions in `Models` (including `@clientName`-driven collisions) and reports an `output-name-collision` diagnostic instead of silently overwriting files.
+
 ## [0.7.0] - 2026-06-06
 
 ### Added

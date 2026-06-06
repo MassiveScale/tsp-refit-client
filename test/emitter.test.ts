@@ -1694,6 +1694,67 @@ describe("emitter", () => {
     ok(!content.includes("ListAsync("), "ListAsync should not appear");
   });
 
+  it("reports an error for empty or whitespace @clientName values", async () => {
+    const [, diags] = await emitWithDiagnostics(`
+      import "@typespec/http";
+      import "@massivescale/tsp-refit-client";
+      using Http;
+      using MassiveScale.TspRefitClient;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @clientName("   ")
+      model Widget { id: string; }
+
+      @route("/widgets")
+      interface Widgets {
+        @get list(): Widget[];
+      }
+    `);
+
+    ok(
+      diags.some(
+        (d) => d.code === "@massivescale/tsp-refit-client/invalid-client-name",
+      ),
+      "Expected invalid-client-name diagnostic",
+    );
+  });
+
+  it("reports an error when model and enum collide on output file name", async () => {
+    const [, diags] = await emitWithDiagnostics(`
+      import "@typespec/http";
+      import "@massivescale/tsp-refit-client";
+      using Http;
+      using MassiveScale.TspRefitClient;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @clientName("Shared")
+      model Animal {
+        id: string;
+        color: Colour;
+      }
+
+      @clientName("Shared")
+      enum Colour { red }
+
+      @route("/animals")
+      interface Animals {
+        @get list(): Animal[];
+      }
+    `);
+
+    ok(
+      diags.some(
+        (d) =>
+          d.code === "@massivescale/tsp-refit-client/output-name-collision",
+      ),
+      "Expected output-name-collision diagnostic",
+    );
+  });
+
   // ─── @access ─────────────────────────────────────────────────────────────────
 
   it("@access(Access.internal) on a model emits internal record", async () => {

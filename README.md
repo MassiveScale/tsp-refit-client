@@ -75,8 +75,10 @@ Overrides the C# identifier used for the decorated element in the emitted output
 @clientName("Pet")
 model Animal { id: string; }
 
-@clientName("search")
-@get op list(): Animal[];
+interface Animals {
+  @clientName("search")
+  @get list(): Animal[];
+}
 ```
 
 #### `@access(Access.public | Access.internal)`
