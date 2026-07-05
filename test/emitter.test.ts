@@ -2009,6 +2009,76 @@ describe("emitter", () => {
     );
   });
 
+  it("discovers grandchild variants through an intermediate model with no @discriminator of its own", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @discriminator("kind")
+      model Pet {
+        kind: string;
+      }
+
+      // Dog is a pass-through: no own discriminator value, just a grouping type.
+      model Dog extends Pet {}
+
+      model Labrador extends Dog {
+        kind: "labrador";
+        isGoodBoy: boolean;
+      }
+
+      model Poodle extends Dog {
+        kind: "poodle";
+        isFancy: boolean;
+      }
+
+      @route("/pets")
+      interface Pets {
+        @get list(): Pet[];
+      }
+    `);
+
+    const dogFile = Object.keys(results).find((k) => k.endsWith("Dog.g.cs"));
+    ok(dogFile, "Expected Dog.g.cs to be emitted");
+    ok(
+      results[dogFile].includes("public record Dog : Pet"),
+      "Expected Dog to inherit from Pet in C#",
+    );
+
+    const labradorFile = Object.keys(results).find((k) =>
+      k.endsWith("Labrador.g.cs"),
+    );
+    ok(
+      labradorFile,
+      "Expected Labrador.g.cs to be emitted despite Dog (its parent) lacking its own @discriminator",
+    );
+    ok(
+      results[labradorFile].includes("public record Labrador : Dog"),
+      "Expected Labrador to inherit from Dog in C#",
+    );
+
+    const poodleFile = Object.keys(results).find((k) =>
+      k.endsWith("Poodle.g.cs"),
+    );
+    ok(poodleFile, "Expected Poodle.g.cs to be emitted");
+
+    const petFile = Object.keys(results).find((k) => k.endsWith("Pet.g.cs"));
+    ok(petFile, "Expected Pet.g.cs");
+    ok(
+      results[petFile].includes(
+        '[JsonDerivedType(typeof(Labrador), "labrador")]',
+      ),
+      "Expected JsonDerivedType for the grandchild Labrador on the root Pet record",
+    );
+    ok(
+      results[petFile].includes('[JsonDerivedType(typeof(Poodle), "poodle")]'),
+      "Expected JsonDerivedType for the grandchild Poodle on the root Pet record",
+    );
+  });
+
   // ─── additional query parameters ─────────────────────────────────────────────
 
   it("adds an additionalQueryParameters dictionary parameter to every generated method", async () => {

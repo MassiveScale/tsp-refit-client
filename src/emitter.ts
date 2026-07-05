@@ -1101,6 +1101,12 @@ function ownProperties(
  * already in `models` into that same map, so they are emitted even though
  * nothing in the service ever references them by name (they only ever appear
  * at runtime as a polymorphic instance of their base type).
+ *
+ * Uses `findDiscriminatedRoot` (self-or-ancestor) rather than `getDiscriminator`
+ * (self-only) to decide whether to keep expanding: intermediate models in a
+ * multi-level hierarchy commonly don't redeclare `@discriminator` themselves,
+ * only the root does, so gating on the model's own decorator would stop the
+ * walk after the first generation and silently drop deeper variants.
  */
 function collectDerivedModels(
   program: Program,
@@ -1109,7 +1115,7 @@ function collectDerivedModels(
   const queue = [...models.values()];
   while (queue.length > 0) {
     const model = queue.pop()!;
-    if (!getDiscriminator(program, model)) continue;
+    if (!findDiscriminatedRoot(program, model)) continue;
     for (const derived of model.derivedModels) {
       if (!derived.name || models.has(derived.name)) continue;
       models.set(derived.name, derived);
