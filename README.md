@@ -178,6 +178,45 @@ await api.Items.ListAsync(skip: 20, ct);
 await api.Items.ListAsync(skip: 20, take: 10, ct);
 ```
 
+### Adding custom query parameters
+
+Every generated method accepts an `additionalQueryParameters` dictionary, so callers can append query parameters that aren't part of the TypeSpec contract (feature flags, tracing params, etc.) to any call:
+
+```csharp
+await api.Items.ListAsync(
+    skip: 20,
+    additionalQueryParameters: new Dictionary<string, object> { ["debug"] = "true" },
+    cancellationToken: ct);
+// GET /api/items?skip=20&debug=true
+```
+
+### Polymorphism (`@discriminator`)
+
+A model decorated with the standard TypeSpec `@discriminator("propName")` decorator is emitted with `[JsonPolymorphic]` / `[JsonDerivedType]` attributes, and its derived models are emitted as C# records that inherit from it — so `System.Text.Json` can deserialize a base-typed response into the correct concrete type at runtime:
+
+```typespec
+@discriminator("kind")
+model Pet { kind: string; name: string; }
+
+model Dog extends Pet { kind: "dog"; isBarker: boolean; }
+model Cat extends Pet { kind: "cat"; isPurrer: boolean; }
+```
+
+```csharp
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(Cat), "cat")]
+[JsonDerivedType(typeof(Dog), "dog")]
+public record Pet { ... }
+
+public record Dog : Pet { public bool IsBarker { get; init; } }
+public record Cat : Pet { public bool IsPurrer { get; init; } }
+
+// A response typed as List<Pet> deserializes each element to its concrete Dog/Cat type.
+List<Pet> pets = await api.Pets.ListAsync(ct);
+```
+
+`Dog` and `Cat` are emitted even though nothing in the TypeSpec definition references them directly — they only ever appear as a polymorphic `Pet` at runtime.
+
 ## Development
 
 ### Prerequisites

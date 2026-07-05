@@ -26,6 +26,13 @@
     .defaultValue   —   default initializer expression (may be falsy), e.g.
                         "default!" or "[]". Written as `= <defaultValue>;`.
 
+  {{baseRecordName}} — C# record to inherit from (may be falsy). Set when this
+                        record is a derived member of a `@discriminator` hierarchy.
+
+  {{discriminator}} — present when the model declares `@discriminator` (may be falsy). Has:
+    .propertyName   —   JSON wire name of the discriminator property, e.g. "petKind"
+    .derivedTypes   —   array of { typeName, value } pairs, one per known derived type
+
   ── Built-in helpers ────────────────────────────────────────────────────────
 
   {{indent <text>}}        — prefixes every non-empty line of <text> with 4 spaces
@@ -35,7 +42,9 @@
 /// <summary>
 {{#if doc}}/// {{docLines doc "/// "}}
 {{/if}}/// </summary>
-{{access}} record {{recordName}}{{genericSuffix}}
+{{#if discriminator}}[JsonPolymorphic(TypeDiscriminatorPropertyName = "{{discriminator.propertyName}}")]
+{{#each discriminator.derivedTypes}}[JsonDerivedType(typeof({{typeName}}), "{{value}}")]
+{{/each}}{{/if}}{{access}} record {{recordName}}{{genericSuffix}}{{#if baseRecordName}} : {{baseRecordName}}{{/if}}
 {
 {{#each properties}}{{#if doc}}    /// <summary>
     /// {{docLines doc "    /// "}}

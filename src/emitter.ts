@@ -19,6 +19,9 @@ import {
   resolvePath,
   isErrorModel,
   isService,
+  getDiscriminator,
+  getDiscriminatedUnionFromInheritance,
+  type Discriminator,
   NoTarget,
 } from "@typespec/compiler";
 import {
@@ -55,6 +58,7 @@ import {
   ExtensionsView,
   InterfaceEntry,
   TemplateOverrides,
+  DiscriminatorView,
 } from "./renderer.js";
 import { EmitterOptions, createDiagnostic } from "./lib.js";
 import { getClientName, getAccess } from "./decorators.js";
@@ -398,6 +402,11 @@ async function emitService(
       );
     }
   }
+
+  // A model's `derivedModels` are only discovered by walking `@discriminator`
+  // hierarchies explicitly — unlike sub-models reached through a property type,
+  // they may never appear as an operation parameter/return type or field type.
+  collectDerivedModels(program, models);
 
   // Emit models and enums
   for (const [, model] of models) {
@@ -854,6 +863,12 @@ function buildMethodView(
     requiredParams.push(`[Body] ${bodyType} body`);
   }
 
+  // Lets callers append arbitrary query parameters not declared in the TypeSpec
+  // contract (e.g. feature flags, tracing params) to any generated call.
+  optionalParams.push(
+    "[Query] Dictionary<string, object>? additionalQueryParameters = null",
+  );
+
   const params = [
     ...requiredParams,
     ...optionalParams,
@@ -948,17 +963,45 @@ function buildRecord(
   const doc = getDoc(program, model);
   const recordName = getClientName(program, model) ?? model.name!;
 
+  // Models with a discriminated ancestor inherit from that ancestor's record in
+  // C# (rather than flattening its properties) so `[JsonDerivedType]` on the
+  // base type can actually resolve to a compatible runtime type.
+  const parentDiscriminated = model.baseModel
+    ? findDiscriminatedRoot(program, model.baseModel)
+    : undefined;
+  const baseRecordName = parentDiscriminated
+    ? (getClientName(program, model.baseModel!) ?? model.baseModel!.name)
+    : undefined;
+  const propsSource = parentDiscriminated
+    ? ownProperties(model, parentDiscriminated.discriminator.propertyName)
+    : flattenProperties(model);
+
+  const selfDiscriminator = getDiscriminator(program, model);
+  let discriminator: DiscriminatorView | undefined;
+  if (selfDiscriminator) {
+    const [union] = getDiscriminatedUnionFromInheritance(
+      model,
+      selfDiscriminator,
+    );
+    discriminator = {
+      propertyName: selfDiscriminator.propertyName,
+      derivedTypes: [...union.variants.entries()]
+        .map(([value, derivedModel]) => ({
+          typeName: getClientName(program, derivedModel) ?? derivedModel.name!,
+          value,
+        }))
+        .sort((a, b) => a.value.localeCompare(b.value)),
+    };
+  }
+
   const recordView: RecordView = {
     doc: doc ? escapeXml(doc) : undefined,
     recordName,
     genericSuffix,
     access: getAccess(program, model) ?? "public",
-    properties: buildPropertyViews(
-      flattenProperties(model),
-      program,
-      models,
-      enums,
-    ),
+    properties: buildPropertyViews(propsSource, program, models, enums),
+    baseRecordName,
+    discriminator,
   };
 
   const body = renderer.renderRecord(recordView);
@@ -1018,6 +1061,61 @@ function flattenProperties(model: Model): Map<string, ModelProperty> {
     props.set(name, prop);
   }
   return props;
+}
+
+// ─── @discriminator support ──────────────────────────────────────────────────
+
+/**
+ * Walks `model` and its `extends` ancestors (inclusive) looking for the nearest
+ * one carrying `@discriminator`. Returns that model along with its discriminator,
+ * or `undefined` when `model` is not part of a discriminated hierarchy.
+ */
+function findDiscriminatedRoot(
+  program: Program,
+  model: Model,
+): { root: Model; discriminator: Discriminator } | undefined {
+  let current: Model | undefined = model;
+  while (current) {
+    const discriminator = getDiscriminator(program, current);
+    if (discriminator) return { root: current, discriminator };
+    current = current.baseModel;
+  }
+  return undefined;
+}
+
+/** A model's own declared properties (no base-model flattening), excluding `propName`. */
+function ownProperties(
+  model: Model,
+  excludePropName: string,
+): Map<string, ModelProperty> {
+  const result = new Map<string, ModelProperty>();
+  for (const [name, prop] of model.properties) {
+    if (name === excludePropName) continue;
+    result.set(name, prop);
+  }
+  return result;
+}
+
+/**
+ * Recursively adds every derived model reachable from a `@discriminator` model
+ * already in `models` into that same map, so they are emitted even though
+ * nothing in the service ever references them by name (they only ever appear
+ * at runtime as a polymorphic instance of their base type).
+ */
+function collectDerivedModels(
+  program: Program,
+  models: Map<string, Model>,
+): void {
+  const queue = [...models.values()];
+  while (queue.length > 0) {
+    const model = queue.pop()!;
+    if (!getDiscriminator(program, model)) continue;
+    for (const derived of model.derivedModels) {
+      if (!derived.name || models.has(derived.name)) continue;
+      models.set(derived.name, derived);
+      queue.push(derived);
+    }
+  }
 }
 
 function collectTypeParams(model: Model): string[] {
