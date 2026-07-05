@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.8] - 2026-07-05
+
+### Added
+
+- `@discriminator` support: a model decorated with `@discriminator("propName")` now emits `[JsonPolymorphic(TypeDiscriminatorPropertyName = "propName")]` plus one `[JsonDerivedType(typeof(Derived), "value")]` per known derived model, so `System.Text.Json` can correctly deserialize a polymorphic base type (e.g. `List<Pet>`) into its concrete runtime types. Derived models (e.g. `Dog`, `Cat`) are now emitted as C# records that inherit from the base record (`public record Dog : Pet`) instead of flattening base properties, and are discovered and emitted even when nothing in the service references them directly — they only ever appear at runtime as a polymorphic instance of their base type, including grandchild variants reached through an intermediate model that doesn't redeclare `@discriminator` itself. The discriminator property itself is not redeclared on derived records since it's inherited from the base.
+- Every generated Refit method now accepts an additional `[Query] Dictionary<string, object>? additionalQueryParameters = null` parameter, letting callers append arbitrary query parameters not declared in the TypeSpec contract to any call.
+
 ## [1.0.0-beta.7] - 2026-06-06
 
 ### Fixed

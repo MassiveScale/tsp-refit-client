@@ -24,12 +24,7 @@ const TEMPLATES_DIR = resolve(
  * Each name maps to a `<name>.hbs` file inside {@link TEMPLATES_DIR}.
  */
 export type TemplateName =
-  | "file"
-  | "record"
-  | "enum"
-  | "refit-interface"
-  | "csproj"
-  | "extensions";
+  "file" | "record" | "enum" | "refit-interface" | "csproj" | "extensions";
 
 /**
  * Partial map of template names to absolute file paths used to override the
@@ -55,6 +50,22 @@ export interface PropertyView {
   defaultValue?: string;
 }
 
+/** One derived-type entry for a `[JsonDerivedType(typeof(...), "...")]` attribute. */
+export interface DerivedTypeView {
+  /** C# record name of the derived type, e.g. `"Dog"`. */
+  typeName: string;
+  /** Wire discriminator value, e.g. `"dog"`. */
+  value: string;
+}
+
+/** View model describing `@discriminator` polymorphism for a base record. */
+export interface DiscriminatorView {
+  /** JSON wire name of the discriminator property, e.g. `"petKind"`. */
+  propertyName: string;
+  /** Ordered list of known derived types, keyed by their discriminator value. */
+  derivedTypes: DerivedTypeView[];
+}
+
 /** View model for a C# `public record` declaration. */
 export interface RecordView {
   /** Optional XML doc text (pre-escaped). */
@@ -67,6 +78,10 @@ export interface RecordView {
   properties: PropertyView[];
   /** C# access modifier: `"public"` (default) or `"internal"`. */
   access: string;
+  /** C# record name to inherit from (`: {baseRecordName}`), when this record is part of a `@discriminator` hierarchy. */
+  baseRecordName?: string;
+  /** Present when the decorated model declares `@discriminator`; drives `[JsonPolymorphic]` / `[JsonDerivedType]` attributes. */
+  discriminator?: DiscriminatorView;
 }
 
 /** View model for a single C# enum member. */

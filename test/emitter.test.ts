@@ -1480,7 +1480,7 @@ describe("emitter", () => {
       "Required param should not be nullable",
     );
     ok(
-      !content.includes("= null"),
+      !content.includes("string filter = null"),
       "Required param should not have null default",
     );
   });
@@ -1923,5 +1923,204 @@ describe("emitter", () => {
       { "clean-output-dir": true },
     );
     strictEqual(diags.length, 0, "Expected no diagnostics");
+  });
+
+  // ─── @discriminator ─────────────────────────────────────────────────────────
+
+  const DISCRIMINATOR_SPEC = `
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @discriminator("kind")
+      model Pet {
+        kind: string;
+        name: string;
+      }
+
+      model Dog extends Pet {
+        kind: "dog";
+        isBarker: boolean;
+      }
+
+      model Cat extends Pet {
+        kind: "cat";
+        isPurrer: boolean;
+      }
+
+      @route("/pets")
+      interface Pets {
+        @get list(): Pet[];
+      }
+    `;
+
+  it("emits [JsonPolymorphic] and one [JsonDerivedType] per derived model on the base record", async () => {
+    const results = await emit(DISCRIMINATOR_SPEC);
+    const petFile = Object.keys(results).find((k) => k.endsWith("Pet.g.cs"));
+    ok(petFile, "Expected Pet.g.cs");
+    const content = results[petFile];
+    ok(
+      content.includes(
+        '[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]',
+      ),
+      "Expected JsonPolymorphic attribute using the discriminator's wire name",
+    );
+    ok(
+      content.includes('[JsonDerivedType(typeof(Dog), "dog")]'),
+      "Expected JsonDerivedType for Dog",
+    );
+    ok(
+      content.includes('[JsonDerivedType(typeof(Cat), "cat")]'),
+      "Expected JsonDerivedType for Cat",
+    );
+  });
+
+  it("emits derived models as records inheriting the base record, without redeclaring the discriminator property", async () => {
+    const results = await emit(DISCRIMINATOR_SPEC);
+    const dogFile = Object.keys(results).find((k) => k.endsWith("Dog.g.cs"));
+    ok(
+      dogFile,
+      "Expected Dog.g.cs to be emitted even though nothing references Dog directly",
+    );
+    const content = results[dogFile];
+    ok(
+      content.includes("public record Dog : Pet"),
+      "Expected Dog to inherit from Pet in C#",
+    );
+    ok(
+      !content.includes("Kind"),
+      "Discriminator property should not be redeclared on the derived record",
+    );
+    ok(
+      content.includes("public bool IsBarker"),
+      "Expected Dog's own property to still be emitted",
+    );
+  });
+
+  it("emits a sibling derived model (Cat) that is never referenced directly", async () => {
+    const results = await emit(DISCRIMINATOR_SPEC);
+    const catFile = Object.keys(results).find((k) => k.endsWith("Cat.g.cs"));
+    ok(catFile, "Expected Cat.g.cs to be emitted");
+    ok(
+      results[catFile].includes("public record Cat : Pet"),
+      "Expected Cat to inherit from Pet in C#",
+    );
+  });
+
+  it("discovers grandchild variants through an intermediate model with no @discriminator of its own", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @discriminator("kind")
+      model Pet {
+        kind: string;
+      }
+
+      // Dog is a pass-through: no own discriminator value, just a grouping type.
+      model Dog extends Pet {}
+
+      model Labrador extends Dog {
+        kind: "labrador";
+        isGoodBoy: boolean;
+      }
+
+      model Poodle extends Dog {
+        kind: "poodle";
+        isFancy: boolean;
+      }
+
+      @route("/pets")
+      interface Pets {
+        @get list(): Pet[];
+      }
+    `);
+
+    const dogFile = Object.keys(results).find((k) => k.endsWith("Dog.g.cs"));
+    ok(dogFile, "Expected Dog.g.cs to be emitted");
+    ok(
+      results[dogFile].includes("public record Dog : Pet"),
+      "Expected Dog to inherit from Pet in C#",
+    );
+
+    const labradorFile = Object.keys(results).find((k) =>
+      k.endsWith("Labrador.g.cs"),
+    );
+    ok(
+      labradorFile,
+      "Expected Labrador.g.cs to be emitted despite Dog (its parent) lacking its own @discriminator",
+    );
+    ok(
+      results[labradorFile].includes("public record Labrador : Dog"),
+      "Expected Labrador to inherit from Dog in C#",
+    );
+
+    const poodleFile = Object.keys(results).find((k) =>
+      k.endsWith("Poodle.g.cs"),
+    );
+    ok(poodleFile, "Expected Poodle.g.cs to be emitted");
+
+    const petFile = Object.keys(results).find((k) => k.endsWith("Pet.g.cs"));
+    ok(petFile, "Expected Pet.g.cs");
+    ok(
+      results[petFile].includes(
+        '[JsonDerivedType(typeof(Labrador), "labrador")]',
+      ),
+      "Expected JsonDerivedType for the grandchild Labrador on the root Pet record",
+    );
+    ok(
+      results[petFile].includes('[JsonDerivedType(typeof(Poodle), "poodle")]'),
+      "Expected JsonDerivedType for the grandchild Poodle on the root Pet record",
+    );
+  });
+
+  // ─── additional query parameters ─────────────────────────────────────────────
+
+  it("adds an additionalQueryParameters dictionary parameter to every generated method", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      model Item { id: string; name: string; }
+
+      @route("/items")
+      interface Items {
+        @get list(@query skip?: int32): Item[];
+        @post create(@body body: Item): Item;
+        @delete remove(@path id: string): void;
+      }
+    `);
+
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
+    ok(ifaceFile, "Expected IItems.g.cs");
+    const content = results[ifaceFile];
+    const expected =
+      "[Query] Dictionary<string, object>? additionalQueryParameters = null";
+    ok(
+      content.includes(
+        `ListAsync(int? skip = null, ${expected}, CancellationToken`,
+      ),
+      "Expected additionalQueryParameters on ListAsync, after existing optional params",
+    );
+    ok(
+      content.includes(
+        `CreateAsync([Body] Item body, ${expected}, CancellationToken`,
+      ),
+      "Expected additionalQueryParameters on CreateAsync, which has no query params of its own",
+    );
+    ok(
+      content.includes(`RemoveAsync(string id, ${expected}, CancellationToken`),
+      "Expected additionalQueryParameters on RemoveAsync, a DELETE with no body",
+    );
   });
 });
