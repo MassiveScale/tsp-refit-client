@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.10] - 2026-07-07
+
+### Added
+
+- New `abstract-discriminated-base` option (default `true`): any model in a `@discriminator` hierarchy that never resolves to a concrete wire variant — the discriminated base itself, and pass-through grouping models with no discriminator value of their own — is now emitted as `abstract record`, since it has no valid JSON shape and would throw at runtime if constructed directly. Set to `false` to keep these records concrete/instantiable.
+
+### Fixed
+
+- `@discriminator` base records no longer redeclare the discriminator property as a member (e.g. `Kind` on `Pet`). Doing so made `System.Text.Json` throw `InvalidOperationException` ("conflicts with an existing metadata property name") on the very first (de)serialization of the hierarchy, since the property collided with `[JsonPolymorphic]`'s `TypeDiscriminatorPropertyName`. The discriminator now lives solely in the `[JsonPolymorphic]`/`[JsonDerivedType]` attributes, matching how `@massivescale/tsp-aspnetcore-api` emits the server-side contract.
+
 ## [1.0.0-beta.8] - 2026-07-05
 
 ### Added

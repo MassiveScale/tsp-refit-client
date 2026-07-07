@@ -17,6 +17,7 @@ export interface EmitterOptions {
   "emit-project-file"?: boolean;
   "overwrite-project-file"?: boolean;
   "clean-output-dir"?: boolean;
+  "abstract-discriminated-base"?: boolean;
   "dotnet-format"?: boolean;
   "nuget-package-id"?: string;
   "nuget-version"?: string;
@@ -95,6 +96,12 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
       type: "boolean",
       description:
         "When true (default), delete all '*.g.cs' files in 'emitter-output-dir' before emitting. Non-generated files and project files are preserved. Set to false to skip cleanup.",
+      nullable: true,
+    },
+    "abstract-discriminated-base": {
+      type: "boolean",
+      description:
+        "When true (default), any model in a `@discriminator` hierarchy that never appears as a concrete wire variant (the discriminated base itself, and pass-through grouping models with no discriminator value of their own) is emitted as `abstract`, since it has no valid JSON shape of its own. Set to false to emit it as a normal instantiable record.",
       nullable: true,
     },
     "dotnet-format": {

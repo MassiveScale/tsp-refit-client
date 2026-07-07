@@ -430,6 +430,7 @@ async function emitService(
       models,
       enums,
       renderer,
+      options["abstract-discriminated-base"] !== false,
     );
     await writeFile(
       program,
@@ -956,6 +957,7 @@ function buildRecord(
   models: Map<string, Model>,
   enums: Map<string, Enum>,
   renderer: Renderer,
+  abstractDiscriminatedBase: boolean,
 ): string {
   const typeParams = collectTypeParams(model);
   const genericSuffix =
@@ -977,7 +979,15 @@ function buildRecord(
     : flattenProperties(model);
 
   const selfDiscriminator = getDiscriminator(program, model);
+  // The discriminator property is emitted purely as [JsonPolymorphic] metadata,
+  // never as a real member — declaring it as a property too makes
+  // System.Text.Json throw ("conflicts with an existing metadata property name")
+  // on the very first (de)serialization of the hierarchy.
+  if (selfDiscriminator) {
+    propsSource.delete(selfDiscriminator.propertyName);
+  }
   let discriminator: DiscriminatorView | undefined;
+  let isAbstract = false;
   if (selfDiscriminator) {
     const [union] = getDiscriminatedUnionFromInheritance(
       model,
@@ -992,6 +1002,19 @@ function buildRecord(
         }))
         .sort((a, b) => a.value.localeCompare(b.value)),
     };
+    // The model carrying `@discriminator` is never itself one of its resolved
+    // variants — only derived models have a concrete wire shape.
+    isAbstract = abstractDiscriminatedBase;
+  } else if (parentDiscriminated) {
+    const [union] = getDiscriminatedUnionFromInheritance(
+      parentDiscriminated.root,
+      parentDiscriminated.discriminator,
+    );
+    const isResolvedVariant = [...union.variants.values()].includes(model);
+    // A pass-through grouping model (e.g. `Dog extends Pet {}` with no
+    // discriminator value of its own) never resolves to a concrete variant
+    // either — only its leaf descendants (e.g. `Labrador`/`Poodle`) do.
+    isAbstract = abstractDiscriminatedBase && !isResolvedVariant;
   }
 
   const recordView: RecordView = {
@@ -1002,6 +1025,7 @@ function buildRecord(
     properties: buildPropertyViews(propsSource, program, models, enums),
     baseRecordName,
     discriminator,
+    isAbstract,
   };
 
   const body = renderer.renderRecord(recordView);

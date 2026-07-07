@@ -1977,6 +1977,59 @@ describe("emitter", () => {
     );
   });
 
+  it("emits the discriminated base record as abstract by default", async () => {
+    const results = await emit(DISCRIMINATOR_SPEC);
+    const petFile = Object.keys(results).find((k) => k.endsWith("Pet.g.cs"));
+    ok(petFile, "Expected Pet.g.cs");
+    ok(
+      results[petFile].includes("public abstract record Pet"),
+      "Expected Pet to be emitted as abstract, since a bare Pet has no valid JSON shape",
+    );
+  });
+
+  it("emits leaf derived records as concrete (non-abstract) even with abstract-discriminated-base on", async () => {
+    const results = await emit(DISCRIMINATOR_SPEC);
+    const dogFile = Object.keys(results).find((k) => k.endsWith("Dog.g.cs"));
+    ok(dogFile, "Expected Dog.g.cs");
+    ok(
+      results[dogFile].includes("public record Dog : Pet") &&
+        !results[dogFile].includes("abstract"),
+      "Expected Dog to remain a concrete, instantiable record since it's a resolved wire variant",
+    );
+  });
+
+  it("keeps the discriminated base record concrete when abstract-discriminated-base is false", async () => {
+    const results = await emit(DISCRIMINATOR_SPEC, {
+      "abstract-discriminated-base": false,
+    });
+    const petFile = Object.keys(results).find((k) => k.endsWith("Pet.g.cs"));
+    ok(petFile, "Expected Pet.g.cs");
+    ok(
+      results[petFile].includes("public record Pet") &&
+        !results[petFile].includes("abstract"),
+      "Expected Pet to remain concrete when the option is disabled",
+    );
+  });
+
+  it("does not redeclare the discriminator property on the base record itself", async () => {
+    // System.Text.Json throws InvalidOperationException at (de)serialization
+    // time if a real property's [JsonPropertyName] collides with
+    // TypeDiscriminatorPropertyName, so the base record must rely solely on
+    // the [JsonPolymorphic]/[JsonDerivedType] attributes for it.
+    const results = await emit(DISCRIMINATOR_SPEC);
+    const petFile = Object.keys(results).find((k) => k.endsWith("Pet.g.cs"));
+    ok(petFile, "Expected Pet.g.cs");
+    const content = results[petFile];
+    ok(
+      !content.includes('[JsonPropertyName("kind")]'),
+      "Discriminator property should not be redeclared as a member on the base record",
+    );
+    ok(
+      content.includes('[JsonPropertyName("name")]'),
+      "Expected Pet's own non-discriminator property to still be emitted",
+    );
+  });
+
   it("emits derived models as records inheriting the base record, without redeclaring the discriminator property", async () => {
     const results = await emit(DISCRIMINATOR_SPEC);
     const dogFile = Object.keys(results).find((k) => k.endsWith("Dog.g.cs"));
@@ -2044,8 +2097,8 @@ describe("emitter", () => {
     const dogFile = Object.keys(results).find((k) => k.endsWith("Dog.g.cs"));
     ok(dogFile, "Expected Dog.g.cs to be emitted");
     ok(
-      results[dogFile].includes("public record Dog : Pet"),
-      "Expected Dog to inherit from Pet in C#",
+      results[dogFile].includes("public abstract record Dog : Pet"),
+      "Expected Dog to inherit from Pet in C# and be abstract, since it never resolves to a concrete wire variant",
     );
 
     const labradorFile = Object.keys(results).find((k) =>
@@ -2056,8 +2109,9 @@ describe("emitter", () => {
       "Expected Labrador.g.cs to be emitted despite Dog (its parent) lacking its own @discriminator",
     );
     ok(
-      results[labradorFile].includes("public record Labrador : Dog"),
-      "Expected Labrador to inherit from Dog in C#",
+      results[labradorFile].includes("public record Labrador : Dog") &&
+        !results[labradorFile].includes("abstract"),
+      "Expected Labrador to inherit from Dog in C# and be concrete, since it's a resolved wire variant",
     );
 
     const poodleFile = Object.keys(results).find((k) =>

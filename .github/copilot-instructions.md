@@ -10,6 +10,8 @@ This file is the **single source of truth** for AI assistant guidance in this re
 
 The emitter generates versioned Refit interfaces, C# model records, and C# enums. See `src/emitter.ts` for the implementation.
 
+While not a dependency, this emitter is often used in conjunction with [@massivescale/tsp-aspnetcore-api](https://github.com/MassiveScale/tsp-aspnetcore-api) and supports similar implimentation patterns.
+
 ---
 
 ## Commands

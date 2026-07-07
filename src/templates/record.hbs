@@ -33,6 +33,10 @@
     .propertyName   —   JSON wire name of the discriminator property, e.g. "petKind"
     .derivedTypes   —   array of { typeName, value } pairs, one per known derived type
 
+  {{isAbstract}}    — when true, renders the `abstract` modifier. Set for
+                       `@discriminator` hierarchy members with no concrete wire
+                       shape of their own (may be falsy).
+
   ── Built-in helpers ────────────────────────────────────────────────────────
 
   {{indent <text>}}        — prefixes every non-empty line of <text> with 4 spaces
@@ -44,7 +48,7 @@
 {{/if}}/// </summary>
 {{#if discriminator}}[JsonPolymorphic(TypeDiscriminatorPropertyName = "{{discriminator.propertyName}}")]
 {{#each discriminator.derivedTypes}}[JsonDerivedType(typeof({{typeName}}), "{{value}}")]
-{{/each}}{{/if}}{{access}} record {{recordName}}{{genericSuffix}}{{#if baseRecordName}} : {{baseRecordName}}{{/if}}
+{{/each}}{{/if}}{{access}} {{#if isAbstract}}abstract {{/if}}record {{recordName}}{{genericSuffix}}{{#if baseRecordName}} : {{baseRecordName}}{{/if}}
 {
 {{#each properties}}{{#if doc}}    /// <summary>
     /// {{docLines doc "    /// "}}
