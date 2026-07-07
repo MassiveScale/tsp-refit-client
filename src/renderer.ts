@@ -82,6 +82,8 @@ export interface RecordView {
   baseRecordName?: string;
   /** Present when the decorated model declares `@discriminator`; drives `[JsonPolymorphic]` / `[JsonDerivedType]` attributes. */
   discriminator?: DiscriminatorView;
+  /** When true, emits the `abstract` modifier — set for `@discriminator` hierarchy members with no concrete wire shape of their own. */
+  isAbstract?: boolean;
 }
 
 /** View model for a single C# enum member. */
