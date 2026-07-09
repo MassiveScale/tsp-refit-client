@@ -22,7 +22,7 @@
     "@typespec/compiler": "^1.13.0"
   },
   "devDependencies": {
-    "@types/node": "^26.1.0",
+    "@types/node": "^26.1.1",
     "@typespec/compiler": "^1.13.0",
     "@typespec/http": "^1.12.0",
     "@typespec/rest": "^0.82.0",
