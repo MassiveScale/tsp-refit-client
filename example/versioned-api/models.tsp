@@ -32,6 +32,10 @@ model Pet is EntityBase {
     @added(Versions.v2_0)
     tags?: Tag[];
 
+    @doc("The store to which the pet belongs.")
+    @visibility(Lifecycle.Read)
+    store?: Store;
+
     @doc("The status of the pet in the store, e.g. available, pending, sold.")
     @visibility(Lifecycle.Read, Lifecycle.Update)
     status: "available" | "pending" | "sold" = "available";

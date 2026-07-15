@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.11] - 2026-07-14
+
+### Fixed
+
+- Emission no longer crashes with `RangeError: Maximum call stack size exceeded` when models reference each other cyclically (e.g. `Pet.store: Store` and `Store.pets: Pet[]`). `gatherTemplateParams` walked model properties recursively with no cycle guard, so a mutual or self reference recursed until the stack overflowed. It now tracks visited models and stops when a model is revisited.
+
 ## [1.0.0-beta.10] - 2026-07-07
 
 ### Added

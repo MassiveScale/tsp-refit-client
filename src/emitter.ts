@@ -1,40 +1,29 @@
+// Emitter entry point and orchestration. `$onEmit` drives the whole run;
+// `emitService` coordinates the per-service pipeline, delegating the actual C#
+// generation to the domain modules:
+//   - ./endpoints  — Refit interfaces (+ request-type collection)
+//   - ./models     — records and enums
+//   - ./client     — DI extensions + aggregate client
+//   - ./project    — .csproj + NuGet version
+//   - ./utils      — type mapping and name/format helpers
+// Everything else here is coordination: renderer setup, file IO, dotnet-format,
+// output-name reservation, and version selection/filtering.
+
 import {
   EmitContext,
   Model,
-  ModelProperty,
-  Scalar,
   Enum,
   Type,
   Interface,
   Namespace,
   Program,
   getDoc,
-  getFormat,
-  isArrayModelType,
-  isRecordModelType,
-  isNullType,
-  isVoidType,
-  isNeverType,
   getNamespaceFullName,
   resolvePath,
-  isErrorModel,
   isService,
-  getDiscriminator,
-  getDiscriminatedUnionFromInheritance,
-  type Discriminator,
   NoTarget,
 } from "@typespec/compiler";
-import {
-  getAllHttpServices,
-  HttpOperation,
-  HttpOperationResponse,
-  HttpPayloadBody,
-  getQueryParamName,
-  getHeaderFieldName,
-  Visibility,
-  isVisible,
-  resolveRequestVisibility,
-} from "@typespec/http";
+import { getAllHttpServices, HttpOperation } from "@typespec/http";
 import {
   getAllVersions,
   getAvailabilityMap,
@@ -44,31 +33,35 @@ import {
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import {
-  createRenderer,
-  Renderer,
-  RecordView,
-  PropertyView,
-  EnumView,
-  EnumMemberView,
-  RefitInterfaceView,
-  MethodView,
-  FileView,
-  CsprojView,
-  ExtensionsView,
-  InterfaceEntry,
-  TemplateOverrides,
-  DiscriminatorView,
-} from "./renderer.js";
+import { createRenderer, Renderer, TemplateOverrides } from "./renderer.js";
 import { EmitterOptions, createDiagnostic } from "./lib.js";
 import { getClientName, getAccess } from "./decorators.js";
+import { buildInterface, RequestType } from "./endpoints.js";
+import {
+  buildRecord,
+  buildFilteredRecord,
+  buildEnum,
+  collectDerivedModels,
+  isEmittable,
+  isEmittableEnum,
+} from "./models.js";
+import { buildExtensions } from "./client.js";
+import { buildCsproj, deriveNugetVersion } from "./project.js";
+import { sanitizeVersionForNs } from "./utils.js";
 
+/** Records which declaration first claimed a given output file name, for collision reporting. */
 type OutputNameOwner = {
+  /** Human-readable label of the claiming declaration (e.g. `model Widget`). */
   label: string;
 };
 
-// ─── Entry point ────────────────────────────────────────────────────────────
-
+/**
+ * Emitter entry point invoked by the TypeSpec compiler. Cleans stale output,
+ * builds the renderer, then emits every HTTP service in the program and finally
+ * runs `dotnet format` (unless disabled).
+ *
+ * @param context - The emit context supplying the program, output dir, and options.
+ */
 export async function $onEmit(
   context: EmitContext<EmitterOptions>,
 ): Promise<void> {
@@ -102,8 +95,15 @@ export async function $onEmit(
   }
 }
 
-// ─── Renderer factory ────────────────────────────────────────────────────────
-
+/**
+ * Creates the Handlebars renderer, applying any configured template overrides.
+ * On failure to load an override, reports a `template-load-failed` diagnostic
+ * and falls back to the built-in templates.
+ *
+ * @param program - The compiler program, used to report diagnostics.
+ * @param options - Emitter options carrying optional template overrides.
+ * @returns A ready-to-use renderer.
+ */
 function buildRenderer(program: Program, options: EmitterOptions): Renderer {
   const overrides = resolveTemplateOverrides(options.templates);
   try {
@@ -120,6 +120,13 @@ function buildRenderer(program: Program, options: EmitterOptions): Renderer {
   }
 }
 
+/**
+ * Resolves configured template override paths to absolute paths (relative to the
+ * current working directory), dropping empty entries.
+ *
+ * @param templates - The raw template overrides from options, if any.
+ * @returns A map of template name to absolute override path.
+ */
 function resolveTemplateOverrides(
   templates?: TemplateOverrides,
 ): TemplateOverrides {
@@ -133,8 +140,13 @@ function resolveTemplateOverrides(
   return result;
 }
 
-// ─── File writing helper ─────────────────────────────────────────────────────
-
+/**
+ * Whether a file exists at the given path on the compiler host.
+ *
+ * @param program - The compiler program (its host performs the stat).
+ * @param filePath - Absolute path to check.
+ * @returns `true` if the path exists and is a file.
+ */
 async function fileExists(
   program: Program,
   filePath: string,
@@ -147,6 +159,13 @@ async function fileExists(
   }
 }
 
+/**
+ * Writes a file through the compiler host, creating parent directories as needed.
+ *
+ * @param program - The compiler program (its host performs the write).
+ * @param filePath - Absolute destination path.
+ * @param content - File contents to write.
+ */
 async function writeFile(
   program: Program,
   filePath: string,
@@ -157,6 +176,14 @@ async function writeFile(
   await program.host.writeFile(filePath, content);
 }
 
+/**
+ * Recursively deletes all `*.g.cs` files under a directory (the pre-emit
+ * cleanup pass), leaving non-generated files and project files in place. A
+ * missing directory is a no-op.
+ *
+ * @param program - The compiler program (its host performs the IO).
+ * @param dir - Directory to clean, recursively.
+ */
 async function deleteGcsFiles(program: Program, dir: string): Promise<void> {
   let entries: string[];
   try {
@@ -182,8 +209,15 @@ async function deleteGcsFiles(program: Program, dir: string): Promise<void> {
   );
 }
 
-// ─── dotnet format ───────────────────────────────────────────────────────────
-
+/**
+ * Runs `dotnet format --no-restore` over the output directory to normalize the
+ * generated C#. Skipped when the directory doesn't exist on the real filesystem
+ * (e.g. the in-memory test harness); a non-zero exit reports a
+ * `dotnet-format-failed` diagnostic rather than throwing.
+ *
+ * @param program - The compiler program, used to report diagnostics.
+ * @param outputDir - The emitter output directory to format.
+ */
 function runDotnetFormat(program: Program, outputDir: string): void {
   // Skip when the output directory doesn't exist on the real filesystem
   // (e.g. in-memory test harness).
@@ -209,8 +243,20 @@ function runDotnetFormat(program: Program, outputDir: string): void {
   }
 }
 
-// ─── Service-level orchestration ────────────────────────────────────────────
-
+/**
+ * Emits all output for a single HTTP service: resolves options and target
+ * versions, groups operations by container, then writes the Refit interfaces
+ * (via {@link buildInterface}), request-type records, DI extensions, model and
+ * enum files, and finally the `.csproj`. Handles both versioned (optionally
+ * per-version folders) and unversioned emission.
+ *
+ * @param program - The compiler program.
+ * @param serviceNs - The service namespace being emitted.
+ * @param operations - The service's HTTP operations.
+ * @param outputDir - The root emitter output directory.
+ * @param options - The resolved emitter options.
+ * @param renderer - Handlebars renderer used to produce file contents.
+ */
 async function emitService(
   program: Program,
   serviceNs: Namespace,
@@ -483,6 +529,19 @@ async function emitService(
   }
 }
 
+/**
+ * Reserves an output file name for a model/enum, guarding against collisions. On
+ * the first claim it records the owner and returns `true`; a subsequent claim of
+ * the same name reports an `output-name-collision` diagnostic and returns
+ * `false` so the caller skips emitting the clashing file.
+ *
+ * @param program - The compiler program, used to report diagnostics.
+ * @param owners - Map of already-claimed output names to their first owner.
+ * @param name - The output file base name being claimed.
+ * @param ownerLabel - Human-readable label of the claiming declaration.
+ * @param target - The declaration, used as the diagnostic target.
+ * @returns `true` if the name was free and is now reserved; `false` on collision.
+ */
 function tryReserveModelOutputName(
   program: Program,
   owners: Map<string, OutputNameOwner>,
@@ -510,85 +569,17 @@ function tryReserveModelOutputName(
   return false;
 }
 
-// ─── NuGet version derivation ────────────────────────────────────────────────
-
 /**
- * Attempts to parse a semver string from a TypeSpec version value.
- * Accepts an optional leading `v`/`V`, two-part (`1.2`) or three-part (`1.2.3`)
- * numeric versions, and preserves any pre-release / build-metadata suffix.
- * Returns `undefined` when the string cannot be interpreted as semver.
- */
-export function tryParseSemver(value: string): string | undefined {
-  const stripped = value.replace(/^[vV]/, "");
-  const match = stripped.match(/^(\d+)\.(\d+)(?:\.(\d+))?([-+].+)?$/);
-  if (!match) return undefined;
-  const patch = match[3] ?? "0";
-  const rest = match[4] ?? "";
-  return `${match[1]}.${match[2]}.${patch}${rest}`;
-}
-
-/** Formats a date as a CalVer string (`YYYY.MM.DD`). */
-export function toCalVer(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}.${m}.${d}`;
-}
-
-/**
- * Derives the NuGet `<Version>` to write into the `.csproj`.
+ * Determines which declared versions to emit: all versions in `all-versions`
+ * mode, the single `target-version` when specified, or the latest declared
+ * version by default. Reports a `version-not-found` diagnostic and returns
+ * `null` when an explicit `target-version` cannot be satisfied.
  *
- * Priority:
- * 1. `nuget-version` option (explicit override)
- * 2. Semver parsed from the targeted TypeSpec API version
- *    - `target-version` (single-version mode) if specified
- *    - Latest declared version otherwise (covers both default single-version and all-versions)
- * 3. CalVer (`YYYY.MM.DD`) when no version is declared or semver cannot be parsed
- */
-export function deriveNugetVersion(
-  allVersions: Version[],
-  options: EmitterOptions,
-): string {
-  if (options["nuget-version"]) return options["nuget-version"];
-
-  let versionString: string | undefined;
-  if (allVersions.length > 0) {
-    if (options["target-version"] && options["all-versions"] !== true) {
-      versionString = allVersions.find(
-        (v) => v.value === options["target-version"],
-      )?.value;
-    }
-    versionString ??= allVersions[allVersions.length - 1].value;
-  }
-
-  if (versionString) {
-    const parsed = tryParseSemver(versionString);
-    if (parsed) return parsed;
-  }
-
-  return toCalVer(new Date());
-}
-
-// ─── Route prefix ────────────────────────────────────────────────────────────
-
-function resolveRoutePrefix(
-  prefix: string,
-  version: Version | undefined,
-): string {
-  let resolved = prefix;
-  if (version) {
-    resolved = resolved.replace(/\{version\}/g, version.value);
-  } else {
-    resolved = resolved.replace(/\{version\}/g, "");
-  }
-  return resolved.replace(/\/+/g, "/").replace(/\/$/, "");
-}
-
-// ─── Version selection ───────────────────────────────────────────────────────
-
-/**
- * Returns the list of versions to emit based on emitter options.
- * Returns `null` (and reports a diagnostic) when the requested version cannot be resolved.
+ * @param program - The compiler program, used to report diagnostics.
+ * @param versions - All declared versions in declaration order (empty when unversioned).
+ * @param options - The resolved emitter options.
+ * @returns The versions to emit (possibly empty for unversioned APIs), or `null`
+ *   when the requested version is unresolvable.
  */
 function resolveTargetVersions(
   program: Program,
@@ -643,8 +634,15 @@ function resolveTargetVersions(
   return [versions[versions.length - 1]];
 }
 
-// ─── Version filtering ───────────────────────────────────────────────────────
-
+/**
+ * Whether an operation exists in a given API version. Operations with no
+ * availability map (unversioned) are considered present in every version.
+ *
+ * @param program - The compiler program.
+ * @param op - The HTTP operation to test.
+ * @param version - The version to check membership in.
+ * @returns `true` if the operation is added or available in the version.
+ */
 function isOpInVersion(
   program: Program,
   op: HttpOperation,
@@ -654,857 +652,4 @@ function isOpInVersion(
   if (!avail) return true;
   const a = avail.get(version.name);
   return a === Availability.Added || a === Availability.Available;
-}
-
-// ─── Visibility-filtered request types ──────────────────────────────────────
-
-interface RequestType {
-  name: string;
-  doc: string | undefined;
-  props: Map<string, ModelProperty>;
-}
-
-function requestTypeSuffix(verb: string): string {
-  switch (verb) {
-    case "post":
-      return "Create";
-    case "patch":
-      return "Update";
-    case "put":
-      return "Replace";
-    default:
-      return capitalize(verb);
-  }
-}
-
-function filterPropsForRequest(
-  model: Model,
-  visibility: Visibility,
-  version: Version | undefined,
-  program: Program,
-): Map<string, ModelProperty> {
-  const result = new Map<string, ModelProperty>();
-  for (const [name, prop] of flattenProperties(model)) {
-    if (version) {
-      const avail = getAvailabilityMap(program, prop);
-      if (avail) {
-        const a = avail.get(version.name);
-        if (a !== Availability.Added && a !== Availability.Available) continue;
-      }
-    }
-    if (!isVisible(program, prop, visibility)) continue;
-    result.set(name, prop);
-  }
-  return result;
-}
-
-// TypeSpec HTTP's applyMergePatchTransform produces models with these stable name suffixes.
-// These models are already purpose-built request payloads and must not be filtered further.
-const MERGE_PATCH_SUFFIXES = [
-  "MergePatchUpdate",
-  "MergePatchUpdateReplaceOnly",
-  "MergePatchCreateOrUpdate",
-];
-
-function isSynthesizedMergePatchModel(model: Model): boolean {
-  return model.name
-    ? MERGE_PATCH_SUFFIXES.some((s) => model.name!.endsWith(s))
-    : false;
-}
-
-function hasHiddenProperties(
-  model: Model,
-  visibility: Visibility,
-  program: Program,
-): boolean {
-  for (const [, prop] of flattenProperties(model)) {
-    if (!isVisible(program, prop, visibility)) return true;
-  }
-  return false;
-}
-
-// ─── C# interface generation ─────────────────────────────────────────────────
-
-function buildInterface(
-  csName: string,
-  csNs: string,
-  ops: HttpOperation[],
-  doc: string | undefined,
-  access: string,
-  program: Program,
-  models: Map<string, Model>,
-  enums: Map<string, Enum>,
-  version: Version | undefined,
-  requestTypes: Map<string, RequestType>,
-  renderer: Renderer,
-  rawRoutePrefix: string,
-): string {
-  const routePrefix = resolveRoutePrefix(rawRoutePrefix, version);
-  const methods = ops.map((op) =>
-    buildMethodView(
-      op,
-      program,
-      models,
-      enums,
-      version,
-      requestTypes,
-      routePrefix,
-    ),
-  );
-  const view: RefitInterfaceView = {
-    interfaceName: csName,
-    doc,
-    access,
-    methods,
-  };
-  const body = renderer.renderRefitInterface(view);
-  const fileView: FileView = {
-    namespace: csNs,
-    usings: sortUsings([
-      "Refit",
-      "System.Collections.Generic",
-      "System.Threading",
-      "System.Threading.Tasks",
-    ]),
-    body,
-    fileName: `${csName}.g.cs`,
-  };
-  return renderer.renderFile(fileView);
-}
-
-function buildMethodView(
-  op: HttpOperation,
-  program: Program,
-  models: Map<string, Model>,
-  enums: Map<string, Enum>,
-  version: Version | undefined,
-  requestTypes: Map<string, RequestType>,
-  routePrefix: string,
-): MethodView {
-  const verb = capitalize(op.verb);
-  const rawPath = routePrefix
-    ? `${routePrefix}/${op.path}`.replace(/\/+/g, "/").replace(/\/$/, "")
-    : op.path;
-  const path = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
-  const baseMethodName =
-    getClientName(program, op.operation) ?? op.operation.name;
-  const methodName = toCsMethodName(baseMethodName);
-  const returnType = resolveReturnType(op.responses, program, models, enums);
-  const doc = getDoc(program, op.operation);
-
-  const requiredParams: string[] = [];
-  const optionalParams: string[] = [];
-
-  for (const param of op.parameters.parameters) {
-    const csType = mapType(param.param.type, program, models, enums);
-    const csParam = toCsParamName(param.param.name);
-    const isOptional = param.param.optional;
-    const nullSuffix = isOptional ? "?" : "";
-    const defaultSuffix = isOptional ? " = null" : "";
-
-    let paramStr: string;
-    if (param.type === "query") {
-      const httpName =
-        getQueryParamName(program, param.param) ?? param.param.name;
-      if (httpName !== param.param.name) {
-        paramStr = `[AliasAs("${httpName}")] ${csType}${nullSuffix} ${csParam}${defaultSuffix}`;
-      } else {
-        paramStr = `${csType}${nullSuffix} ${csParam}${defaultSuffix}`;
-      }
-    } else if (param.type === "header") {
-      const headerName = getHeaderFieldName(program, param.param);
-      paramStr = `[Header("${headerName}")] ${csType}${nullSuffix} ${csParam}${defaultSuffix}`;
-    } else {
-      paramStr = `${csType}${nullSuffix} ${csParam}${defaultSuffix}`;
-    }
-
-    if (isOptional) {
-      optionalParams.push(paramStr);
-    } else {
-      requiredParams.push(paramStr);
-    }
-  }
-
-  if (op.parameters.body) {
-    const body = op.parameters.body;
-    let bodyType = resolveBodyType(body, program, models, enums);
-
-    if (
-      body.bodyKind === "single" &&
-      body.type.kind === "Model" &&
-      (op.verb === "post" || op.verb === "patch" || op.verb === "put")
-    ) {
-      const bodyModel = body.type as Model;
-      if (bodyModel.name && !isSynthesizedMergePatchModel(bodyModel)) {
-        const visibility = resolveRequestVisibility(
-          program,
-          op.operation,
-          op.verb,
-        );
-        if (hasHiddenProperties(bodyModel, visibility, program)) {
-          const suffix = requestTypeSuffix(op.verb);
-          const requestTypeName = `${bodyModel.name}${suffix}Request`;
-          if (!requestTypes.has(requestTypeName)) {
-            requestTypes.set(requestTypeName, {
-              name: requestTypeName,
-              doc: getDoc(program, bodyModel),
-              props: filterPropsForRequest(
-                bodyModel,
-                visibility,
-                version,
-                program,
-              ),
-            });
-          }
-          bodyType = requestTypeName;
-        }
-      }
-    }
-
-    requiredParams.push(`[Body] ${bodyType} body`);
-  }
-
-  // Lets callers append arbitrary query parameters not declared in the TypeSpec
-  // contract (e.g. feature flags, tracing params) to any generated call.
-  optionalParams.push(
-    "[Query] Dictionary<string, object>? additionalQueryParameters = null",
-  );
-
-  const params = [
-    ...requiredParams,
-    ...optionalParams,
-    "CancellationToken cancellationToken = default",
-  ];
-
-  return {
-    doc: doc ? escapeXml(doc) : undefined,
-    verb,
-    path,
-    returnType,
-    methodName,
-    paramsText: params.join(", "),
-  };
-}
-
-function resolveReturnType(
-  responses: HttpOperationResponse[],
-  program: Program,
-  models: Map<string, Model>,
-  enums: Map<string, Enum>,
-): string {
-  for (const resp of responses) {
-    const sc = resp.statusCodes;
-    const isSuccess =
-      sc === "*"
-        ? false
-        : typeof sc === "number"
-          ? sc >= 200 && sc < 300
-          : sc.start >= 200 && sc.end < 300;
-    if (!isSuccess) continue;
-
-    for (const content of resp.responses) {
-      if (content.body) {
-        const t = resolveBodyType(content.body, program, models, enums);
-        if (t !== "void") return `Task<${t}>`;
-      }
-    }
-  }
-  return "Task";
-}
-
-function resolveBodyType(
-  body: HttpPayloadBody,
-  program: Program,
-  models: Map<string, Model>,
-  enums: Map<string, Enum>,
-): string {
-  if (body.bodyKind === "single") {
-    return mapType(body.type, program, models, enums);
-  }
-  return "object";
-}
-
-// ─── C# model generation ─────────────────────────────────────────────────────
-
-function buildPropertyViews(
-  props: Iterable<[string, ModelProperty]>,
-  program: Program,
-  models: Map<string, Model>,
-  enums: Map<string, Enum>,
-): PropertyView[] {
-  const result: PropertyView[] = [];
-  for (const [, prop] of props) {
-    const propDoc = getDoc(program, prop);
-    const csType = mapType(prop.type, program, models, enums);
-    const nullable = prop.optional ? "?" : "";
-    const propName = toCsPropName(getClientName(program, prop) ?? prop.name);
-    const defaultVal = prop.optional ? undefined : defaultForTypeRaw(csType);
-    result.push({
-      doc: propDoc ? escapeXml(propDoc) : undefined,
-      type: `${csType}${nullable}`,
-      name: propName,
-      jsonPropertyName: prop.name,
-      defaultValue: defaultVal,
-    });
-  }
-  return result;
-}
-
-function buildRecord(
-  model: Model,
-  csNs: string,
-  program: Program,
-  models: Map<string, Model>,
-  enums: Map<string, Enum>,
-  renderer: Renderer,
-  abstractDiscriminatedBase: boolean,
-): string {
-  const typeParams = collectTypeParams(model);
-  const genericSuffix =
-    typeParams.length > 0 ? `<${typeParams.join(", ")}>` : "";
-  const doc = getDoc(program, model);
-  const recordName = getClientName(program, model) ?? model.name!;
-
-  // Models with a discriminated ancestor inherit from that ancestor's record in
-  // C# (rather than flattening its properties) so `[JsonDerivedType]` on the
-  // base type can actually resolve to a compatible runtime type.
-  const parentDiscriminated = model.baseModel
-    ? findDiscriminatedRoot(program, model.baseModel)
-    : undefined;
-  const baseRecordName = parentDiscriminated
-    ? (getClientName(program, model.baseModel!) ?? model.baseModel!.name)
-    : undefined;
-  const propsSource = parentDiscriminated
-    ? ownProperties(model, parentDiscriminated.discriminator.propertyName)
-    : flattenProperties(model);
-
-  const selfDiscriminator = getDiscriminator(program, model);
-  // The discriminator property is emitted purely as [JsonPolymorphic] metadata,
-  // never as a real member — declaring it as a property too makes
-  // System.Text.Json throw ("conflicts with an existing metadata property name")
-  // on the very first (de)serialization of the hierarchy.
-  if (selfDiscriminator) {
-    propsSource.delete(selfDiscriminator.propertyName);
-  }
-  let discriminator: DiscriminatorView | undefined;
-  let isAbstract = false;
-  if (selfDiscriminator) {
-    const [union] = getDiscriminatedUnionFromInheritance(
-      model,
-      selfDiscriminator,
-    );
-    discriminator = {
-      propertyName: selfDiscriminator.propertyName,
-      derivedTypes: [...union.variants.entries()]
-        .map(([value, derivedModel]) => ({
-          typeName: getClientName(program, derivedModel) ?? derivedModel.name!,
-          value,
-        }))
-        .sort((a, b) => a.value.localeCompare(b.value)),
-    };
-    // The model carrying `@discriminator` is never itself one of its resolved
-    // variants — only derived models have a concrete wire shape.
-    isAbstract = abstractDiscriminatedBase;
-  } else if (parentDiscriminated) {
-    const [union] = getDiscriminatedUnionFromInheritance(
-      parentDiscriminated.root,
-      parentDiscriminated.discriminator,
-    );
-    const isResolvedVariant = [...union.variants.values()].includes(model);
-    // A pass-through grouping model (e.g. `Dog extends Pet {}` with no
-    // discriminator value of its own) never resolves to a concrete variant
-    // either — only its leaf descendants (e.g. `Labrador`/`Poodle`) do.
-    isAbstract = abstractDiscriminatedBase && !isResolvedVariant;
-  }
-
-  const recordView: RecordView = {
-    doc: doc ? escapeXml(doc) : undefined,
-    recordName,
-    genericSuffix,
-    access: getAccess(program, model) ?? "public",
-    properties: buildPropertyViews(propsSource, program, models, enums),
-    baseRecordName,
-    discriminator,
-    isAbstract,
-  };
-
-  const body = renderer.renderRecord(recordView);
-  const fileView: FileView = {
-    namespace: csNs,
-    usings: sortUsings([
-      "System",
-      "System.Collections.Generic",
-      "System.Text.Json.Serialization",
-    ]),
-    body,
-    fileName: `${recordName}.g.cs`,
-  };
-  return renderer.renderFile(fileView);
-}
-
-function buildFilteredRecord(
-  name: string,
-  doc: string | undefined,
-  props: Map<string, ModelProperty>,
-  csNs: string,
-  program: Program,
-  models: Map<string, Model>,
-  enums: Map<string, Enum>,
-  renderer: Renderer,
-): string {
-  const recordView: RecordView = {
-    doc: doc ? escapeXml(doc) : undefined,
-    recordName: name,
-    genericSuffix: "",
-    access: "public",
-    properties: buildPropertyViews(props, program, models, enums),
-  };
-
-  const body = renderer.renderRecord(recordView);
-  const fileView: FileView = {
-    namespace: csNs,
-    usings: sortUsings([
-      "System",
-      "System.Collections.Generic",
-      "System.Text.Json.Serialization",
-    ]),
-    body,
-    fileName: `${name}.g.cs`,
-  };
-  return renderer.renderFile(fileView);
-}
-
-function flattenProperties(model: Model): Map<string, ModelProperty> {
-  const props = new Map<string, ModelProperty>();
-  if (model.baseModel) {
-    for (const [name, prop] of flattenProperties(model.baseModel)) {
-      props.set(name, prop);
-    }
-  }
-  for (const [name, prop] of model.properties) {
-    props.set(name, prop);
-  }
-  return props;
-}
-
-// ─── @discriminator support ──────────────────────────────────────────────────
-
-/**
- * Walks `model` and its `extends` ancestors (inclusive) looking for the nearest
- * one carrying `@discriminator`. Returns that model along with its discriminator,
- * or `undefined` when `model` is not part of a discriminated hierarchy.
- */
-function findDiscriminatedRoot(
-  program: Program,
-  model: Model,
-): { root: Model; discriminator: Discriminator } | undefined {
-  let current: Model | undefined = model;
-  while (current) {
-    const discriminator = getDiscriminator(program, current);
-    if (discriminator) return { root: current, discriminator };
-    current = current.baseModel;
-  }
-  return undefined;
-}
-
-/** A model's own declared properties (no base-model flattening), excluding `propName`. */
-function ownProperties(
-  model: Model,
-  excludePropName: string,
-): Map<string, ModelProperty> {
-  const result = new Map<string, ModelProperty>();
-  for (const [name, prop] of model.properties) {
-    if (name === excludePropName) continue;
-    result.set(name, prop);
-  }
-  return result;
-}
-
-/**
- * Recursively adds every derived model reachable from a `@discriminator` model
- * already in `models` into that same map, so they are emitted even though
- * nothing in the service ever references them by name (they only ever appear
- * at runtime as a polymorphic instance of their base type).
- *
- * Uses `findDiscriminatedRoot` (self-or-ancestor) rather than `getDiscriminator`
- * (self-only) to decide whether to keep expanding: intermediate models in a
- * multi-level hierarchy commonly don't redeclare `@discriminator` themselves,
- * only the root does, so gating on the model's own decorator would stop the
- * walk after the first generation and silently drop deeper variants.
- */
-function collectDerivedModels(
-  program: Program,
-  models: Map<string, Model>,
-): void {
-  const queue = [...models.values()];
-  while (queue.length > 0) {
-    const model = queue.pop()!;
-    if (!findDiscriminatedRoot(program, model)) continue;
-    for (const derived of model.derivedModels) {
-      if (!derived.name || models.has(derived.name)) continue;
-      models.set(derived.name, derived);
-      queue.push(derived);
-    }
-  }
-}
-
-function collectTypeParams(model: Model): string[] {
-  const params: string[] = [];
-  for (const [, prop] of model.properties) {
-    gatherTemplateParams(prop.type, params);
-  }
-  return [...new Set(params)];
-}
-
-function gatherTemplateParams(type: Type, out: string[]): void {
-  if (type.kind === "TemplateParameter") {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    out.push((type as any).node?.id?.sv ?? "T");
-  } else if (type.kind === "Model") {
-    const m = type as Model;
-    if (m.indexer) gatherTemplateParams(m.indexer.value, out);
-    // When Array<T> is represented as a template instance (no indexer), recurse into args.
-    if (m.templateMapper?.args) {
-      for (const arg of m.templateMapper.args) {
-        if ((arg as { entityKind?: string }).entityKind === "Type") {
-          gatherTemplateParams(arg as Type, out);
-        }
-      }
-    }
-    for (const [, p] of m.properties) gatherTemplateParams(p.type, out);
-  }
-}
-
-function defaultForTypeRaw(csType: string): string | undefined {
-  if (csType.startsWith("List<")) return "[]";
-  if (csType === "string") return "default!";
-  if (csType === "byte[]") return "default!";
-  if (csType === "Uri") return "default!";
-  return undefined;
-}
-
-function buildEnum(
-  e: Enum,
-  csNs: string,
-  program: Program,
-  renderer: Renderer,
-): string {
-  const doc = getDoc(program, e);
-  const enumName = getClientName(program, e) ?? e.name;
-
-  const members: EnumMemberView[] = [];
-  for (const [, member] of e.members) {
-    const memberDoc = getDoc(program, member);
-    const stringValue =
-      typeof member.value === "string" ? member.value : member.name;
-    members.push({
-      doc: memberDoc ? escapeXml(memberDoc) : undefined,
-      name: toCsPropName(member.name),
-      memberValue: stringValue,
-    });
-  }
-
-  const enumView: EnumView = {
-    doc: doc ? escapeXml(doc) : undefined,
-    enumName,
-    access: getAccess(program, e) ?? "public",
-    members,
-  };
-
-  const body = renderer.renderEnum(enumView);
-  const fileView: FileView = {
-    namespace: csNs,
-    usings: sortUsings([
-      "System.Runtime.Serialization",
-      "System.Text.Json.Serialization",
-    ]),
-    body,
-    fileName: `${enumName}.g.cs`,
-  };
-  return renderer.renderFile(fileView);
-}
-
-// ─── C# project file ────────────────────────────────────────────────────────
-
-function buildCsproj(
-  rootNs: string,
-  netVersion: string,
-  isMultiTarget: boolean,
-  nugetVersion: string,
-  nugetDescription: string,
-  nugetTitle: string | undefined,
-  options: EmitterOptions,
-  renderer: Renderer,
-): string {
-  const view: CsprojView = {
-    rootNamespace: rootNs,
-    netVersion,
-    isMultiTarget,
-    nugetDescription,
-    nugetTitle,
-    nugetPackageId: options["nuget-package-id"],
-    nugetVersion,
-    nugetAuthors: options["nuget-authors"],
-    nugetTags: options["nuget-tags"],
-  };
-  return renderer.renderCsproj(view);
-}
-
-// ─── DI registration extension class ────────────────────────────────────────
-
-function buildExtensions(
-  serviceName: string,
-  csNs: string,
-  interfaceNames: string[],
-  renderer: Renderer,
-): string {
-  const className = `${serviceName}Extensions`;
-  const methodName = `Add${serviceName}`;
-  const clientClassName = serviceName;
-  const interfaces: InterfaceEntry[] = interfaceNames.map((name) => {
-    const propertyName = name.startsWith("I") ? name.slice(1) : name;
-    const paramName =
-      propertyName.charAt(0).toLowerCase() + propertyName.slice(1);
-    return { name, propertyName, paramName };
-  });
-  const view: ExtensionsView = {
-    className,
-    methodName,
-    clientClassName,
-    interfaces,
-  };
-  const body = renderer.renderExtensions(view);
-  const fileView: FileView = {
-    namespace: csNs,
-    usings: sortUsings([
-      "Microsoft.Extensions.DependencyInjection",
-      "Refit",
-      "System",
-      "System.Net.Http",
-    ]),
-    body,
-    fileName: `${className}.g.cs`,
-  };
-  return renderer.renderFile(fileView);
-}
-
-// ─── Type mapping ────────────────────────────────────────────────────────────
-
-function mapType(
-  type: Type,
-  program: Program,
-  models: Map<string, Model>,
-  enums: Map<string, Enum>,
-): string {
-  switch (type.kind) {
-    case "Scalar":
-      return mapScalar(type as Scalar, program);
-
-    case "Model": {
-      const m = type as Model;
-      if (isArrayModelType(m)) {
-        return `List<${mapType(m.indexer!.value, program, models, enums)}>`;
-      }
-      if (isRecordModelType(m)) {
-        return `Dictionary<string, ${mapType(m.indexer!.value, program, models, enums)}>`;
-      }
-      if (isErrorModel(program, m)) {
-        // Still emit, just note it
-      }
-      if (!m.name) return "object";
-
-      // Template instance
-      if (m.templateMapper?.args) {
-        const args = m.templateMapper.args
-          .filter(
-            (a): a is Type =>
-              (a as { entityKind?: string }).entityKind === "Type",
-          )
-          .map((a) => mapType(a, program, models, enums));
-        // Array<T> represented as a template instance (unresolved element type) → List<T>
-        if (m.name === "Array" && args.length === 1) {
-          return `List<${args[0]}>`;
-        }
-        const decl = m.namespace?.models.get(m.name);
-        if (decl) models.set(m.name, decl);
-        else models.set(m.name, m);
-        const csName = getClientName(program, decl ?? m) ?? m.name;
-        return args.length > 0 ? `${csName}<${args.join(", ")}>` : csName;
-      }
-
-      models.set(m.name, m);
-      return getClientName(program, m) ?? m.name;
-    }
-
-    case "Enum": {
-      const e = type as Enum;
-      if (e.name) enums.set(e.name, e);
-      return e.name ? (getClientName(program, e) ?? e.name) : "string";
-    }
-
-    case "Union":
-      return "string";
-
-    case "Intrinsic":
-      if (isVoidType(type)) return "void";
-      if (isNullType(type)) return "object";
-      if (isNeverType(type)) return "object";
-      return "object";
-
-    case "TemplateParameter":
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (type as any).node?.id?.sv ?? "T";
-
-    default:
-      return "object";
-  }
-}
-
-function mapScalar(scalar: Scalar, program: Program): string {
-  const fmt = getFormat(program, scalar);
-  if (fmt === "uuid") return "Guid";
-  if (fmt === "uri" || fmt === "url") return "Uri";
-
-  const builtin = builtinScalarName(scalar);
-  switch (builtin) {
-    case "string":
-      return "string";
-    case "int8":
-      return "sbyte";
-    case "int16":
-      return "short";
-    case "int32":
-      return "int";
-    case "int64":
-      return "long";
-    case "uint8":
-      return "byte";
-    case "uint16":
-      return "ushort";
-    case "uint32":
-      return "uint";
-    case "uint64":
-      return "ulong";
-    case "safeint":
-      return "long";
-    case "float32":
-      return "float";
-    case "float64":
-      return "double";
-    case "decimal":
-    case "decimal128":
-      return "decimal";
-    case "boolean":
-      return "bool";
-    case "bytes":
-      return "byte[]";
-    case "utcDateTime":
-    case "offsetDateTime":
-      return "DateTimeOffset";
-    case "plainDate":
-      return "DateOnly";
-    case "plainTime":
-      return "TimeOnly";
-    case "duration":
-      return "TimeSpan";
-    case "url":
-      return "Uri";
-    case "numeric":
-    case "integer":
-    case "float":
-      return "double";
-    default:
-      return "string";
-  }
-}
-
-const BUILTIN_SCALARS = new Set([
-  "string",
-  "int8",
-  "int16",
-  "int32",
-  "int64",
-  "uint8",
-  "uint16",
-  "uint32",
-  "uint64",
-  "safeint",
-  "integer",
-  "float",
-  "float32",
-  "float64",
-  "decimal",
-  "decimal128",
-  "numeric",
-  "boolean",
-  "bytes",
-  "utcDateTime",
-  "offsetDateTime",
-  "plainDate",
-  "plainTime",
-  "duration",
-  "url",
-]);
-
-function builtinScalarName(scalar: Scalar): string {
-  let current: Scalar | undefined = scalar;
-  while (current) {
-    if (BUILTIN_SCALARS.has(current.name)) return current.name;
-    current = current.baseScalar;
-  }
-  return scalar.name;
-}
-
-// ─── Emission filters ────────────────────────────────────────────────────────
-
-function isEmittable(model: Model, serviceNsName: string): boolean {
-  if (!model.name) return false;
-  const ns = model.namespace ? getNamespaceFullName(model.namespace) : "";
-  return (
-    ns === serviceNsName || ns.startsWith(`${serviceNsName}.`) || ns === ""
-  );
-}
-
-function isEmittableEnum(e: Enum, serviceNsName: string): boolean {
-  if (!e.name) return false;
-  const ns = e.namespace ? getNamespaceFullName(e.namespace) : "";
-  return (
-    ns === serviceNsName || ns.startsWith(`${serviceNsName}.`) || ns === ""
-  );
-}
-
-// ─── Name / formatting helpers ───────────────────────────────────────────────
-
-function sanitizeVersionForNs(version: string): string {
-  return "V" + version.replace(/^v/i, "").replace(/\./g, "_");
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-function toCsMethodName(name: string): string {
-  return capitalize(name) + "Async";
-}
-
-function toCsParamName(name: string): string {
-  return name.charAt(0).toLowerCase() + name.slice(1);
-}
-
-function toCsPropName(name: string): string {
-  return name.charAt(0).toUpperCase() + name.slice(1);
-}
-
-function escapeXml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function sortUsings(usings: string[]): string[] {
-  return [...usings].sort((a, b) => {
-    const aSystem = a.startsWith("System");
-    const bSystem = b.startsWith("System");
-    if (aSystem && !bSystem) return -1;
-    if (!aSystem && bSystem) return 1;
-    return a.localeCompare(b);
-  });
 }

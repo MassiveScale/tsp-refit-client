@@ -49,11 +49,25 @@ always run `npm run format` after any change
 TypeSpec discovers this emitter via two required exports in `src/index.ts`:
 
 - **`$lib`** (`src/lib.ts`) — Registers the library name (`"@massivescale/tsp-refit-client"`) and declares compiler diagnostics via `createTypeSpecLibrary`. Add new diagnostic codes here before using `reportDiagnostic` or `createDiagnostic`.
-- **`$onEmit`** (`src/emitter.ts`) — The emitter entry point called by the TypeSpec compiler. Receives an `EmitContext` containing the program's type graph. All code generation logic lives here or is called from here.
+- **`$onEmit`** (`src/emitter.ts`) — The emitter entry point called by the TypeSpec compiler. Receives an `EmitContext` containing the program's type graph, then orchestrates the run.
+
+### Source Layout
+
+Generation logic is split by output domain, each with a matching `test/<name>.test.ts`:
+
+- **`src/emitter.ts`** — Entry point and orchestration only: `$onEmit`, the per-service pipeline (`emitService`), renderer setup, file IO, `dotnet format`, output-name reservation, and version selection/filtering. Delegates all C# generation to the modules below.
+- **`src/endpoints.ts`** — Refit interface generation: methods, parameter bindings, route resolution, and collection of visibility-filtered request payload types.
+- **`src/models.ts`** — C# `record` and `enum` generation, including `@discriminator` polymorphic hierarchies, request-payload records, and namespace-based emission filters.
+- **`src/client.ts`** — DI registration extension class and the aggregate client class.
+- **`src/project.ts`** — `.csproj` generation and NuGet `<Version>` derivation.
+- **`src/utils.ts`** — Dependency-light shared helpers: C# type mapping (`mapType`) and name/formatting utilities. A leaf module — never imports the other codegen modules.
+- **`src/renderer.ts`** — Handlebars renderer and view interfaces. **`src/decorators.ts`** — `@clientName` / `@access` decorator implementations.
+
+Import direction is a DAG: `utils` ← `models` ← `endpoints`; `client`/`project` ← `emitter`; `emitter` is the only module that imports the domain modules.
 
 ### Test Infrastructure
 
-`test/test-host.ts` sets up a TypeSpec test harness using `createTester` pointed at the repo root, with `@massivescale/tsp-refit-client` as the loaded library. It exports two helpers:
+`test/host.ts` sets up a TypeSpec test harness using `createTester` pointed at the repo root, with `@massivescale/tsp-refit-client` as the loaded library. It exports two helpers:
 
 - `emit(code)` — Compiles inline TypeSpec, asserts no diagnostics, returns `Record<string, string>` mapping output file paths to their string content.
 - `emitWithDiagnostics(code)` — Same but also returns compiler diagnostics for testing error cases.
@@ -83,6 +97,14 @@ Declare all diagnostic codes in `src/lib.ts` inside the `diagnostics` map passed
 ### Linting
 
 ESLint uses the flat config format (`eslint.config.js`) with `typescript-eslint`. Unused variables prefixed with `_` are allowed by convention.
+
+### Comments
+
+Do **not** add decorative section-divider banner comments (e.g. `// ─── C# interface generation ───`). Keep inline comments to genuine explanations of non-obvious code. Rely on the file/module split — not in-file banners — to separate concerns.
+
+### JSDoc
+
+Every function, method, type, interface, and exported constant must have a JSDoc (`/** … */`) block describing what it is. Document parameters and return values with `@param` / `@returns` where they are not fully self-evident from the signature, and document non-obvious fields on interfaces/types. This is a hard requirement for all new and modified declarations — do not omit it.
 
 ---
 
