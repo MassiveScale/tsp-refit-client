@@ -321,6 +321,49 @@ describe("emitter", () => {
     );
   });
 
+  it("emits mutually-referential models without overflowing the stack", async () => {
+    // Regression test: Pet.store -> Store.pets -> Pet is a reference cycle.
+    // gatherTemplateParams previously recursed through model properties with no
+    // cycle guard, overflowing the stack with a RangeError on any such spec.
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      model Pet {
+        name: string;
+        store?: Store;
+      }
+
+      model Store {
+        name: string;
+        pets: Pet[];
+      }
+
+      @route("/pets")
+      interface Pets {
+        @get list(): Pet[];
+      }
+    `);
+
+    const petFile = Object.keys(results).find((k) => k.endsWith("Pet.g.cs"));
+    const storeFile = Object.keys(results).find((k) =>
+      k.endsWith("Store.g.cs"),
+    );
+    ok(petFile, "Expected Pet.g.cs to be emitted");
+    ok(storeFile, "Expected Store.g.cs to be emitted");
+    ok(
+      results[petFile].includes("public record Pet"),
+      "Expected Pet record declaration",
+    );
+    ok(
+      results[storeFile].includes("public record Store"),
+      "Expected Store record declaration",
+    );
+  });
+
   it("emits a .csproj file", async () => {
     const results = await emit(`
       import "@typespec/http";

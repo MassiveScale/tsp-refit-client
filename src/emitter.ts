@@ -1150,28 +1150,37 @@ function collectDerivedModels(
 
 function collectTypeParams(model: Model): string[] {
   const params: string[] = [];
+  const seen = new Set<Type>();
   for (const [, prop] of model.properties) {
-    gatherTemplateParams(prop.type, params);
+    gatherTemplateParams(prop.type, params, seen);
   }
   return [...new Set(params)];
 }
 
-function gatherTemplateParams(type: Type, out: string[]): void {
+function gatherTemplateParams(
+  type: Type,
+  out: string[],
+  seen: Set<Type>,
+): void {
   if (type.kind === "TemplateParameter") {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     out.push((type as any).node?.id?.sv ?? "T");
   } else if (type.kind === "Model") {
     const m = type as Model;
-    if (m.indexer) gatherTemplateParams(m.indexer.value, out);
+    // Guard against cyclic model references (e.g. Pet.store -> Store.pets -> Pet)
+    // which would otherwise recurse infinitely and overflow the stack.
+    if (seen.has(m)) return;
+    seen.add(m);
+    if (m.indexer) gatherTemplateParams(m.indexer.value, out, seen);
     // When Array<T> is represented as a template instance (no indexer), recurse into args.
     if (m.templateMapper?.args) {
       for (const arg of m.templateMapper.args) {
         if ((arg as { entityKind?: string }).entityKind === "Type") {
-          gatherTemplateParams(arg as Type, out);
+          gatherTemplateParams(arg as Type, out, seen);
         }
       }
     }
-    for (const [, p] of m.properties) gatherTemplateParams(p.type, out);
+    for (const [, p] of m.properties) gatherTemplateParams(p.type, out, seen);
   }
 }
 
