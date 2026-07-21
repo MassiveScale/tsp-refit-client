@@ -78,6 +78,41 @@ describe("models", () => {
     );
   });
 
+  it('maps a boolean with @encode("string") to C# string, leaving plain booleans as bool', async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      model Widget {
+        @encode(string)
+        active: boolean;
+        enabled: boolean;
+      }
+
+      @route("/widgets")
+      interface Widgets {
+        @get list(): Widget[];
+      }
+    `);
+
+    const modelFile = Object.keys(results).find((k) =>
+      k.endsWith("Widget.g.cs"),
+    );
+    ok(modelFile, "Expected Widget.g.cs to be emitted");
+    const content = results[modelFile];
+    ok(
+      content.includes("public string Active"),
+      "Expected string-encoded boolean to map to C# string",
+    );
+    ok(
+      content.includes("public bool Enabled"),
+      "Expected a plain boolean to remain C# bool",
+    );
+  });
+
   it("emits mutually-referential models without overflowing the stack", async () => {
     // Regression test: Pet.store -> Store.pets -> Pet is a reference cycle.
     // gatherTemplateParams previously recursed through model properties with no

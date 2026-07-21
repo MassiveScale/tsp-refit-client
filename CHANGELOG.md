@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.12] - 2026-07-20
+
+### Added
+
+- Support for `@encode("string")` on `boolean` model properties and operation parameters (new in the TypeSpec 1.14.0 wave). A boolean that travels on the wire as a JSON string (`"true"`/`"false"`) is now emitted as C# `string` instead of `bool`; plain booleans are unaffected. Other `@encode` targets (dates, durations, bytes) are still ignored — see the type-mapping notes for the remaining gap.
+
+### Changed
+
+- Bumped development dependencies to the TypeSpec 1.14.0 wave: `@typespec/compiler` and `@typespec/http` to `^1.14.0`, `@typespec/rest` and `@typespec/versioning` to `^0.84.0`. The `peerDependencies` floor is intentionally left at `^1.13.0` (compiler) / `^1.12.0` (http) — no 1.14.0 API is required at runtime, so consumers are not forced to upgrade.
+
+### Removed
+
+- **Breaking (tooling):** Removed the `./testing` package export and the `TspRefitClientTestLibrary` it exposed. It relied on `createTestLibrary`/`TypeSpecTestLibrary`, both deprecated in TypeSpec 1.14.0. Consumers writing tests against this emitter should use `createTester` from `@typespec/compiler/testing` directly (see `test/host.ts` for the pattern).
+
 ## [1.0.0-beta.11] - 2026-07-14
 
 ### Fixed

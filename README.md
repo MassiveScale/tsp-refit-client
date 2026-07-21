@@ -220,6 +220,20 @@ List<Pet> pets = await api.Pets.ListAsync(ct);
 
 `Pet` is emitted as `abstract` because a bare `Pet` has no valid JSON shape of its own — `System.Text.Json` would throw at the first (de)serialization attempt. This also applies to pass-through grouping models with no discriminator value of their own (e.g. a `Dog extends Pet {}` that only groups `Labrador`/`Poodle`). Set `"abstract-discriminated-base": false` to keep these records concrete instead.
 
+### String-encoded booleans (`@encode`)
+
+A `boolean` property or parameter decorated with `@encode("string")` travels on the wire as a JSON string (`"true"`/`"false"`), so it is emitted as C# `string` rather than `bool`:
+
+```typespec
+model Widget {
+  @encode(string)
+  active: boolean;   // → public string Active
+  enabled: boolean;  // → public bool Enabled
+}
+```
+
+Other `@encode` targets (dates, durations, bytes) are not yet honored and map by their declared type.
+
 ## Development
 
 ### Prerequisites

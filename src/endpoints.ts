@@ -34,6 +34,7 @@ import {
 import { getClientName } from "./decorators.js";
 import {
   mapType,
+  mapPropertyType,
   capitalize,
   toCsMethodName,
   toCsParamName,
@@ -280,7 +281,7 @@ function buildMethodView(
   const optionalParams: string[] = [];
 
   for (const param of op.parameters.parameters) {
-    const csType = mapType(param.param.type, program, models, enums);
+    const csType = mapPropertyType(param.param, program, models, enums);
     const csParam = toCsParamName(param.param.name);
     const isOptional = param.param.optional;
     const nullSuffix = isOptional ? "?" : "";
