@@ -25,7 +25,12 @@ import {
   DiscriminatorView,
 } from "./renderer.js";
 import { getClientName, getAccess } from "./decorators.js";
-import { mapType, escapeXml, sortUsings, toCsPropName } from "./utils.js";
+import {
+  mapPropertyType,
+  escapeXml,
+  sortUsings,
+  toCsPropName,
+} from "./utils.js";
 
 /**
  * Builds the renderer property views for a set of model properties: C# type,
@@ -46,7 +51,7 @@ function buildPropertyViews(
   const result: PropertyView[] = [];
   for (const [, prop] of props) {
     const propDoc = getDoc(program, prop);
-    const csType = mapType(prop.type, program, models, enums);
+    const csType = mapPropertyType(prop, program, models, enums);
     const nullable = prop.optional ? "?" : "";
     const propName = toCsPropName(getClientName(program, prop) ?? prop.name);
     const defaultVal = prop.optional ? undefined : defaultForTypeRaw(csType);

@@ -5,10 +5,12 @@
 
 import {
   Model,
+  ModelProperty,
   Scalar,
   Enum,
   Type,
   Program,
+  getEncode,
   getFormat,
   isArrayModelType,
   isRecordModelType,
@@ -100,6 +102,40 @@ export function mapType(
     default:
       return "object";
   }
+}
+
+/**
+ * Maps a model property to its C# type, taking `@encode` into account before
+ * delegating to {@link mapType}. A `boolean` property carrying `@encode("string")`
+ * travels on the wire as a JSON string (`"true"`/`"false"`), so it is emitted as
+ * C# `string` rather than `bool`; all other properties map by their declared type.
+ *
+ * @param prop - The model property to map (source of both the type and `@encode`).
+ * @param program - The compiler program, used to read `@encode` and scalar formats.
+ * @param models - Accumulator that collects referenced named models by name.
+ * @param enums - Accumulator that collects referenced named enums by name.
+ * @returns The C# type expression as a string.
+ */
+export function mapPropertyType(
+  prop: ModelProperty,
+  program: Program,
+  models: Map<string, Model>,
+  enums: Map<string, Enum>,
+): string {
+  const encode = getEncode(program, prop);
+  const encodesAsString =
+    encode !== undefined &&
+    (encode.encoding === "string" ||
+      (encode.type !== undefined &&
+        builtinScalarName(encode.type) === "string"));
+  if (
+    encodesAsString &&
+    prop.type.kind === "Scalar" &&
+    builtinScalarName(prop.type as Scalar) === "boolean"
+  ) {
+    return "string";
+  }
+  return mapType(prop.type, program, models, enums);
 }
 
 /**
