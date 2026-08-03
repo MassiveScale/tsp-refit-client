@@ -1,7 +1,8 @@
 // Shared, dependency-light helpers: C# type mapping (TypeSpec type → C# type
 // string) and the small name / formatting utilities used across the emitter.
-// This module is a leaf — it depends only on the compiler and decorators, never
-// on the other codegen modules — so it can be imported freely without cycles.
+// This module is a leaf — it depends only on the compiler, `@typespec/http`,
+// and decorators, never on the other codegen modules — so it can be imported
+// freely without cycles.
 
 import {
   Model,
@@ -19,6 +20,7 @@ import {
   isNeverType,
   isErrorModel,
 } from "@typespec/compiler";
+import { getMergePatchSource } from "@typespec/http/experimental/merge-patch";
 import { getClientName } from "./decorators.js";
 
 /**
@@ -56,6 +58,22 @@ export function mapType(
         // Still emit, just note it
       }
       if (!m.name) return "object";
+
+      // `MergePatchUpdate<T>` (and its `ReplaceOnly`/`CreateOrUpdate` siblings) synthesize a
+      // distinct, flattened, all-optional Model rather than a template instance of `T` — so the
+      // `templateMapper` branch below never fires for them. `@typespec/http` tracks the original
+      // resource model (`T`) for every such synthesized model; redirect the reference to the
+      // hand-authored generic `MergePatch<T>` helper instead of emitting the synthesized model's
+      // own (unbacked) literal name as a phantom C# type.
+      const mergePatchSource = getMergePatchSource(program, m);
+      if (mergePatchSource) {
+        const targetCsName =
+          getClientName(program, mergePatchSource) ?? mergePatchSource.name!;
+        if (mergePatchSource.name) {
+          models.set(mergePatchSource.name, mergePatchSource);
+        }
+        return `MergePatch<${targetCsName}>`;
+      }
 
       // Template instance
       if (m.templateMapper?.args) {

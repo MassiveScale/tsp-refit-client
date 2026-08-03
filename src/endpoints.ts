@@ -191,6 +191,9 @@ function resolveRoutePrefix(
  *   types discovered while building methods.
  * @param renderer - Handlebars renderer used to produce the file contents.
  * @param rawRoutePrefix - The unresolved `route-prefix` option value.
+ * @param additionalUsings - Extra `using` directives from the `additional-usings`
+ *   option, appended to every emitted file regardless of whether this particular
+ *   file references anything from them (see `EmitterOptions["additional-usings"]`).
  * @returns The full C# source of the generated interface file.
  */
 export function buildInterface(
@@ -206,6 +209,7 @@ export function buildInterface(
   requestTypes: Map<string, RequestType>,
   renderer: Renderer,
   rawRoutePrefix: string,
+  additionalUsings: string[],
 ): string {
   const routePrefix = resolveRoutePrefix(rawRoutePrefix, version);
   const methods = ops.map((op) =>
@@ -229,10 +233,13 @@ export function buildInterface(
   const fileView: FileView = {
     namespace: csNs,
     usings: sortUsings([
-      "Refit",
-      "System.Collections.Generic",
-      "System.Threading",
-      "System.Threading.Tasks",
+      ...new Set([
+        "Refit",
+        "System.Collections.Generic",
+        "System.Threading",
+        "System.Threading.Tasks",
+        ...additionalUsings,
+      ]),
     ]),
     body,
     fileName: `${csName}.g.cs`,

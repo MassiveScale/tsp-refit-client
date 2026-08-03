@@ -281,6 +281,7 @@ async function emitService(
   const isMultiTarget = netVersionParts.length > 1;
 
   const rawRoutePrefix = options["route-prefix"] ?? "api/{version}";
+  const additionalUsings = options["additional-usings"] ?? [];
   const nugetDescription =
     options["nuget-description"] ?? `Refit client for the ${baseNs} API`;
   const nugetTitle =
@@ -348,6 +349,7 @@ async function emitService(
           requestTypes,
           renderer,
           rawRoutePrefix,
+          additionalUsings,
         );
         await writeFile(
           program,
@@ -365,6 +367,7 @@ async function emitService(
           models,
           enums,
           renderer,
+          additionalUsings,
         );
         // In single-version mode, request types live alongside regular models.
         const rtDir = useVersionedFolders
@@ -410,6 +413,7 @@ async function emitService(
         requestTypes,
         renderer,
         rawRoutePrefix,
+        additionalUsings,
       );
       await writeFile(
         program,
@@ -427,6 +431,7 @@ async function emitService(
         models,
         enums,
         renderer,
+        additionalUsings,
       );
       await writeFile(
         program,
@@ -477,6 +482,7 @@ async function emitService(
       enums,
       renderer,
       options["abstract-discriminated-base"] !== false,
+      additionalUsings,
     );
     await writeFile(
       program,

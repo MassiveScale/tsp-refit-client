@@ -9,6 +9,7 @@ export interface EmitterOptions {
   "project-name"?: string;
   "client-name"?: string;
   "root-namespace"?: string;
+  "additional-usings"?: string[];
   "net-version"?: string;
   "target-version"?: string;
   "all-versions"?: boolean;
@@ -49,6 +50,13 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
       description:
         "Override the root C# namespace. Defaults to the TypeSpec namespace + '.Client'.",
       nullable: true,
+    },
+    "additional-usings": {
+      type: "array",
+      description:
+        "Extra `using` directives appended to every emitted file (interfaces, records, and request records). Useful when this service references models/enums declared outside its own TypeSpec namespace but already emitted elsewhere — e.g. a sibling emitter's shared namespace — so referencing them still compiles. Omitted when not set.",
+      nullable: true,
+      items: { type: "string" },
     },
     "net-version": {
       type: "string",
