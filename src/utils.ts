@@ -336,14 +336,40 @@ export function escapeXml(s: string): string {
 }
 
 /**
+ * Normalizes a single C# `using` namespace so it contains only code-safe
+ * characters. Each namespace segment (separated by `.`) is sanitized by
+ * replacing invalid characters with `_` and ensuring it doesn't start with a
+ * digit.
+ */
+function normalizeUsing(u: string): string {
+  const trimmed = (u ?? "").trim();
+  const parts = trimmed.split(".");
+  const sanitized = parts.map((seg) => {
+    if (!seg) return "_";
+    // Replace any char that's not letter/digit/underscore with '_'
+    let s = seg.replace(/[^A-Za-z0-9_]/g, "_");
+    // If segment starts with a digit, prefix with '_'
+    if (/^[0-9]/.test(s)) s = `_${s}`;
+    return s;
+  });
+  return sanitized.join(".");
+}
+
+/**
  * Sorts C# `using` namespaces with all `System*` namespaces first, then the rest,
- * each group ordered alphabetically. Does not mutate the input array.
+ * each group ordered alphabetically. Accepts any iterable of strings and does
+ * normalization and deduplication; does not mutate the input.
  *
- * @param usings - The namespaces to sort.
+ * @param usings - The namespaces to sort (array, Set, or other iterable).
  * @returns A new, sorted array.
  */
-export function sortUsings(usings: string[]): string[] {
-  return [...usings].sort((a, b) => {
+export function sortUsings(usings: Iterable<string>): string[] {
+  const normalized = new Set<string>();
+  for (const u of usings) {
+    if (!u) continue;
+    normalized.add(normalizeUsing(u));
+  }
+  return [...normalized].sort((a, b) => {
     const aSystem = a.startsWith("System");
     const bSystem = b.startsWith("System");
     if (aSystem && !bSystem) return -1;

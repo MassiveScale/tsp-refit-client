@@ -95,7 +95,7 @@ export function buildRecord(
   enums: Map<string, Enum>,
   renderer: Renderer,
   abstractDiscriminatedBase: boolean,
-  additionalUsings: string[],
+  additionalUsings: Set<string>,
 ): string {
   const typeParams = collectTypeParams(model);
   const genericSuffix =
@@ -210,7 +210,7 @@ export function buildFilteredRecord(
   models: Map<string, Model>,
   enums: Map<string, Enum>,
   renderer: Renderer,
-  additionalUsings: string[],
+  additionalUsings: Set<string>,
 ): string {
   const recordView: RecordView = {
     doc: doc ? escapeXml(doc) : undefined,

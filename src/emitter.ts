@@ -281,7 +281,7 @@ async function emitService(
   const isMultiTarget = netVersionParts.length > 1;
 
   const rawRoutePrefix = options["route-prefix"] ?? "api/{version}";
-  const additionalUsings = options["additional-usings"] ?? [];
+  const additionalUsings = new Set(options["additional-usings"] ?? []);
   const nugetDescription =
     options["nuget-description"] ?? `Refit client for the ${baseNs} API`;
   const nugetTitle =

@@ -209,7 +209,7 @@ export function buildInterface(
   requestTypes: Map<string, RequestType>,
   renderer: Renderer,
   rawRoutePrefix: string,
-  additionalUsings: string[],
+  additionalUsings: Set<string>,
 ): string {
   const routePrefix = resolveRoutePrefix(rawRoutePrefix, version);
   const methods = ops.map((op) =>

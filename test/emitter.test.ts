@@ -309,9 +309,7 @@ describe("emitter", () => {
     const ifaceFile = Object.keys(results).find((k) =>
       k.endsWith("IItems.g.cs"),
     );
-    const modelFile = Object.keys(results).find((k) =>
-      k.endsWith("Item.g.cs"),
-    );
+    const modelFile = Object.keys(results).find((k) => k.endsWith("Item.g.cs"));
     ok(ifaceFile, "Expected IItems.g.cs");
     ok(modelFile, "Expected Item.g.cs");
     ok(
