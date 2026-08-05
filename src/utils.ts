@@ -67,12 +67,15 @@ export function mapType(
       // own (unbacked) literal name as a phantom C# type.
       const mergePatchSource = getMergePatchSource(program, m);
       if (mergePatchSource) {
-        const targetCsName =
-          getClientName(program, mergePatchSource) ?? mergePatchSource.name!;
         if (mergePatchSource.name) {
           models.set(mergePatchSource.name, mergePatchSource);
         }
-        return `MergePatch<${targetCsName}>`;
+
+        const targetCsType = mergePatchSource.name
+          ? (getClientName(program, mergePatchSource) ?? mergePatchSource.name)
+          : mapType(mergePatchSource, program, models, enums);
+
+        return `MergePatch<${targetCsType}>`;
       }
 
       // Template instance
