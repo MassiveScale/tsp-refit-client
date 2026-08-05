@@ -7,3 +7,5 @@ dist/
 
 # Dependency directories
 node_modules/
+# Coverage reports
+coverage/
