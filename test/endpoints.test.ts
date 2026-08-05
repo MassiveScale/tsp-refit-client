@@ -522,4 +522,51 @@ describe("endpoints", () => {
       "Expected additionalQueryParameters on RemoveAsync, a DELETE with no body",
     );
   });
+
+  it("redirects MergePatchUpdate<T> to the MergePatch<T> helper instead of its literal synthesized name", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      model Widget { id: string; name: string; }
+
+      @route("/widgets")
+      interface Widgets {
+        @patch update(@path id: string, @body body: MergePatchUpdate<Widget>): Widget;
+      }
+    `);
+
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IWidgets.g.cs"),
+    );
+    ok(ifaceFile, "Expected IWidgets.g.cs");
+    const content = results[ifaceFile];
+    ok(
+      content.includes("[Body] MergePatch<Widget> body"),
+      "Expected the body parameter to be typed as MergePatch<Widget>, not the synthesized WidgetMergePatchUpdate name",
+    );
+    ok(
+      !content.includes("WidgetMergePatchUpdate"),
+      "Did not expect the synthesized model's literal name to leak into the interface",
+    );
+
+    const phantomFile = Object.keys(results).find((k) =>
+      k.includes("WidgetMergePatchUpdate"),
+    );
+    ok(
+      !phantomFile,
+      "Did not expect a model file to be emitted for the synthesized WidgetMergePatchUpdate model",
+    );
+
+    const widgetFile = Object.keys(results).find((k) =>
+      k.endsWith("Widget.g.cs"),
+    );
+    ok(
+      widgetFile,
+      "Expected the real Widget model to still be emitted (referenced via MergePatch<Widget>)",
+    );
+  });
 });

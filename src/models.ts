@@ -82,6 +82,9 @@ function buildPropertyViews(
  * @param abstractDiscriminatedBase - When `true`, models with no concrete wire
  *   shape (the discriminated base and pass-through grouping models) are emitted
  *   as `abstract record`.
+ * @param additionalUsings - Extra `using` directives from the `additional-usings`
+ *   option, appended to every emitted file regardless of whether this particular
+ *   file references anything from them (see `EmitterOptions["additional-usings"]`).
  * @returns The full C# source of the generated record file.
  */
 export function buildRecord(
@@ -92,6 +95,7 @@ export function buildRecord(
   enums: Map<string, Enum>,
   renderer: Renderer,
   abstractDiscriminatedBase: boolean,
+  additionalUsings: Set<string>,
 ): string {
   const typeParams = collectTypeParams(model);
   const genericSuffix =
@@ -166,9 +170,12 @@ export function buildRecord(
   const fileView: FileView = {
     namespace: csNs,
     usings: sortUsings([
-      "System",
-      "System.Collections.Generic",
-      "System.Text.Json.Serialization",
+      ...new Set([
+        "System",
+        "System.Collections.Generic",
+        "System.Text.Json.Serialization",
+        ...additionalUsings,
+      ]),
     ]),
     body,
     fileName: `${recordName}.g.cs`,
@@ -189,6 +196,9 @@ export function buildRecord(
  * @param models - Accumulator for referenced named models (see {@link mapType}).
  * @param enums - Accumulator for referenced named enums (see {@link mapType}).
  * @param renderer - Handlebars renderer used to produce the file contents.
+ * @param additionalUsings - Extra `using` directives from the `additional-usings`
+ *   option, appended to every emitted file regardless of whether this particular
+ *   file references anything from them (see `EmitterOptions["additional-usings"]`).
  * @returns The full C# source of the generated record file.
  */
 export function buildFilteredRecord(
@@ -200,6 +210,7 @@ export function buildFilteredRecord(
   models: Map<string, Model>,
   enums: Map<string, Enum>,
   renderer: Renderer,
+  additionalUsings: Set<string>,
 ): string {
   const recordView: RecordView = {
     doc: doc ? escapeXml(doc) : undefined,
@@ -213,9 +224,12 @@ export function buildFilteredRecord(
   const fileView: FileView = {
     namespace: csNs,
     usings: sortUsings([
-      "System",
-      "System.Collections.Generic",
-      "System.Text.Json.Serialization",
+      ...new Set([
+        "System",
+        "System.Collections.Generic",
+        "System.Text.Json.Serialization",
+        ...additionalUsings,
+      ]),
     ]),
     body,
     fileName: `${name}.g.cs`,

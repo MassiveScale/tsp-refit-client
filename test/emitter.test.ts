@@ -286,4 +286,67 @@ describe("emitter", () => {
     );
     strictEqual(diags.length, 0, "Expected no diagnostics");
   });
+
+  it("additional-usings: appends the configured usings to every emitted file", async () => {
+    const results = await emit(
+      `
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      model Item { id: string; name: string; }
+
+      @route("/items")
+      interface Items {
+        @get list(): Item[];
+      }
+    `,
+      { "additional-usings": ["Shared.Models", "Shared.Helpers"] },
+    );
+
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
+    const modelFile = Object.keys(results).find((k) => k.endsWith("Item.g.cs"));
+    ok(ifaceFile, "Expected IItems.g.cs");
+    ok(modelFile, "Expected Item.g.cs");
+    ok(
+      results[ifaceFile].includes("using Shared.Helpers;") &&
+        results[ifaceFile].includes("using Shared.Models;"),
+      "Expected both additional usings on the interface file, regardless of whether it needs them",
+    );
+    ok(
+      results[modelFile].includes("using Shared.Helpers;") &&
+        results[modelFile].includes("using Shared.Models;"),
+      "Expected both additional usings on the model file, regardless of whether it needs them",
+    );
+  });
+
+  it("additional-usings: adds nothing beyond the default usings when unset", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      model Item { id: string; name: string; }
+
+      @route("/items")
+      interface Items {
+        @get list(): Item[];
+      }
+    `);
+
+    const ifaceFile = Object.keys(results).find((k) =>
+      k.endsWith("IItems.g.cs"),
+    );
+    ok(ifaceFile, "Expected IItems.g.cs");
+    ok(
+      !results[ifaceFile].includes("Shared."),
+      "Expected no stray usings when additional-usings is not set",
+    );
+  });
 });

@@ -1,7 +1,8 @@
 // Shared, dependency-light helpers: C# type mapping (TypeSpec type → C# type
 // string) and the small name / formatting utilities used across the emitter.
-// This module is a leaf — it depends only on the compiler and decorators, never
-// on the other codegen modules — so it can be imported freely without cycles.
+// This module is a leaf — it depends only on the compiler, `@typespec/http`,
+// and decorators, never on the other codegen modules — so it can be imported
+// freely without cycles.
 
 import {
   Model,
@@ -19,6 +20,7 @@ import {
   isNeverType,
   isErrorModel,
 } from "@typespec/compiler";
+import { getMergePatchSource } from "@typespec/http/experimental/merge-patch";
 import { getClientName } from "./decorators.js";
 
 /**
@@ -56,6 +58,25 @@ export function mapType(
         // Still emit, just note it
       }
       if (!m.name) return "object";
+
+      // `MergePatchUpdate<T>` (and its `ReplaceOnly`/`CreateOrUpdate` siblings) synthesize a
+      // distinct, flattened, all-optional Model rather than a template instance of `T` — so the
+      // `templateMapper` branch below never fires for them. `@typespec/http` tracks the original
+      // resource model (`T`) for every such synthesized model; redirect the reference to the
+      // hand-authored generic `MergePatch<T>` helper instead of emitting the synthesized model's
+      // own (unbacked) literal name as a phantom C# type.
+      const mergePatchSource = getMergePatchSource(program, m);
+      if (mergePatchSource) {
+        if (mergePatchSource.name) {
+          models.set(mergePatchSource.name, mergePatchSource);
+        }
+
+        const targetCsType = mergePatchSource.name
+          ? (getClientName(program, mergePatchSource) ?? mergePatchSource.name)
+          : mapType(mergePatchSource, program, models, enums);
+
+        return `MergePatch<${targetCsType}>`;
+      }
 
       // Template instance
       if (m.templateMapper?.args) {
@@ -315,14 +336,40 @@ export function escapeXml(s: string): string {
 }
 
 /**
+ * Normalizes a single C# `using` namespace so it contains only code-safe
+ * characters. Each namespace segment (separated by `.`) is sanitized by
+ * replacing invalid characters with `_` and ensuring it doesn't start with a
+ * digit.
+ */
+function normalizeUsing(u: string): string {
+  const trimmed = (u ?? "").trim();
+  const parts = trimmed.split(".");
+  const sanitized = parts.map((seg) => {
+    if (!seg) return "_";
+    // Replace any char that's not letter/digit/underscore with '_'
+    let s = seg.replace(/[^A-Za-z0-9_]/g, "_");
+    // If segment starts with a digit, prefix with '_'
+    if (/^[0-9]/.test(s)) s = `_${s}`;
+    return s;
+  });
+  return sanitized.join(".");
+}
+
+/**
  * Sorts C# `using` namespaces with all `System*` namespaces first, then the rest,
- * each group ordered alphabetically. Does not mutate the input array.
+ * each group ordered alphabetically. Accepts any iterable of strings and does
+ * normalization and deduplication; does not mutate the input.
  *
- * @param usings - The namespaces to sort.
+ * @param usings - The namespaces to sort (array, Set, or other iterable).
  * @returns A new, sorted array.
  */
-export function sortUsings(usings: string[]): string[] {
-  return [...usings].sort((a, b) => {
+export function sortUsings(usings: Iterable<string>): string[] {
+  const normalized = new Set<string>();
+  for (const u of usings) {
+    if (!u) continue;
+    normalized.add(normalizeUsing(u));
+  }
+  return [...normalized].sort((a, b) => {
     const aSystem = a.startsWith("System");
     const bSystem = b.startsWith("System");
     if (aSystem && !bSystem) return -1;
