@@ -84,10 +84,13 @@ export const internalAccessLeakRule = createRule({
         if (containerAccess === "internal") return;
 
         for (const op of iface.operations.values()) {
+          const opAccess = getAccess(context.program, op) ?? "public";
+          if (opAccess === "internal") continue;
+
           for (const prop of op.parameters.properties.values()) {
-            checkReferencedTypes(prop.type, op.name, "parameter type", op);
+            checkReferencedTypes(prop.type, op.name, "parameter", prop);
           }
-          checkReferencedTypes(op.returnType, op.name, "return type", op);
+          checkReferencedTypes(op.returnType, op.name, "return", op);
         }
       },
       model: (model: Model) => {
@@ -95,7 +98,7 @@ export const internalAccessLeakRule = createRule({
         if (modelAccess === "internal") return;
 
         for (const [, prop] of flattenProperties(model)) {
-          checkReferencedTypes(prop.type, prop.name, "property type", prop);
+          checkReferencedTypes(prop.type, prop.name, "property", prop);
         }
       },
     };

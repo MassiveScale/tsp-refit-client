@@ -1,6 +1,8 @@
 import { describe, it, before } from "node:test";
+import { getSourceLocation } from "@typespec/compiler";
 import {
   createLinterRuleTester,
+  t,
   type LinterRuleTester,
 } from "@typespec/compiler/testing";
 import { BaseTester } from "./host.js";
@@ -39,6 +41,8 @@ describe("internal-access-leak", () => {
       )
       .toEmitDiagnostics({
         code: "@massivescale/tsp-refit-client/internal-access-leak",
+        message:
+          '"read" is public but its parameter type "Secret" is marked @access(Access.internal); the generated C# will fail to compile (CS0053: inconsistent accessibility). Mark "Secret" @access(Access.public), or mark "read" @access(Access.internal) as well.',
       });
   });
 
@@ -63,6 +67,8 @@ describe("internal-access-leak", () => {
       )
       .toEmitDiagnostics({
         code: "@massivescale/tsp-refit-client/internal-access-leak",
+        message:
+          '"read" is public but its return type "Secret" is marked @access(Access.internal); the generated C# will fail to compile (CS0053: inconsistent accessibility). Mark "Secret" @access(Access.public), or mark "read" @access(Access.internal) as well.',
       });
   });
 
@@ -139,6 +145,8 @@ describe("internal-access-leak", () => {
       )
       .toEmitDiagnostics({
         code: "@massivescale/tsp-refit-client/internal-access-leak",
+        message:
+          '"secret" is public but its property type "Secret" is marked @access(Access.internal); the generated C# will fail to compile (CS0053: inconsistent accessibility). Mark "Secret" @access(Access.public), or mark "secret" @access(Access.internal) as well.',
       });
   });
 
@@ -238,6 +246,60 @@ describe("internal-access-leak", () => {
         @access(Access.internal)
         interface Widgets {
           read(): Secret;
+        }
+      `,
+      )
+      .toBeValid();
+  });
+
+  it("targets the specific parameter, not the whole operation, for a parameter-type leak", async () => {
+    await tester
+      .expect(
+        t.code`
+        import "@massivescale/tsp-refit-client";
+        using MassiveScale.TspRefitClient;
+
+        namespace TestApi;
+
+        @access(Access.internal)
+        model Secret {
+          value: string;
+        }
+
+        interface Widgets {
+          read(${t.modelProperty("secretParam")}: Secret): void;
+        }
+      `,
+      )
+      .toEmitDiagnostics((res) => {
+        const location = getSourceLocation(res.secretParam);
+        return {
+          code: "@massivescale/tsp-refit-client/internal-access-leak",
+          pos: location.pos,
+          end: location.end,
+        };
+      });
+  });
+
+  it("is valid when an individual operation is @access(Access.internal) inside an otherwise public interface, even if it references an internal type via a parameter", async () => {
+    await tester
+      .expect(
+        `
+        import "@massivescale/tsp-refit-client";
+        using MassiveScale.TspRefitClient;
+
+        namespace TestApi;
+
+        @access(Access.internal)
+        model Secret {
+          value: string;
+        }
+
+        interface Widgets {
+          read(): void;
+
+          @access(Access.internal)
+          write(secret: Secret): void;
         }
       `,
       )
