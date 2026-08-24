@@ -3,7 +3,7 @@ import { expectDiagnosticEmpty } from "@typespec/compiler/testing";
 import { createTester } from "@typespec/compiler/testing";
 import type { EmitterOptions } from "../src/lib.js";
 
-const BaseTester = createTester(resolvePath(import.meta.dirname, "../.."), {
+export const BaseTester = createTester(resolvePath(import.meta.dirname, "../.."), {
   libraries: [
     "@massivescale/tsp-refit-client",
     "@typespec/http",
