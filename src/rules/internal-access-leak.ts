@@ -85,12 +85,7 @@ export const internalAccessLeakRule = createRule({
 
         for (const op of iface.operations.values()) {
           for (const prop of op.parameters.properties.values()) {
-            checkReferencedTypes(
-              prop.type,
-              op.name,
-              "parameter type",
-              op,
-            );
+            checkReferencedTypes(prop.type, op.name, "parameter type", op);
           }
           checkReferencedTypes(op.returnType, op.name, "return type", op);
         }
