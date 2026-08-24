@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added first lint rule: `internal-access-leak`, warning when a public operation or model references an `@access(Access.internal)` type, which would fail to compile as generated C#.
+
+### Fixed
+
+- `internal-access-leak`: fixed message wording that duplicated the word "type" (e.g. "its parameter type type") for all three diagnosed cases (parameter, return, and property leaks).
+- `internal-access-leak`: a parameter-type leak is now reported against the specific parameter's `ModelProperty`, not the whole `Operation`, giving a more precise diagnostic location — matching how property-type leaks already target the specific `ModelProperty`.
+- `internal-access-leak`: an individual `Operation` marked `@access(Access.internal)` is now correctly skipped, even when its containing `Interface` is public. Previously only the container's resolved access was checked, so an internal operation inside a public interface was incorrectly flagged for referencing internal types.
+
+### Changed
+
+- Bumped development dependencies to the TypeSpec 1.15.0 wave: `@typespec/compiler` and `@typespec/http` to `^1.15.0`, `@typespec/versioning` to `^0.85.0`. The `peerDependencies` floor is now raised to `@typespec/compiler ^1.15.0` and `@typespec/http ^1.15.0` / `@typespec/versioning ^0.85.0` were added as peers, matching the convention used by this package's sibling emitters — a deliberate departure from the previous intentionally-conservative floor (see the 1.14.0 entry below), since consumers of this package's decorators and emitter already require the newer compiler/http/versioning APIs at runtime. `@typespec/rest` remains dev-only (not a peer): it is not imported anywhere under `src/`, so this package has no runtime dependency on it.
+- Verified the TypeSpec 1.15.0 change to `using` resolution (a `using X;` before a file-level `namespace` now resolves `X` from the global namespace instead of the file namespace) has no effect here: `lib/main.tsp`'s `using TypeSpec.Reflection;` and the `example/simple-api` fixture's `using Http;` both already target genuine top-level globals. The full test suite and an `example/simple-api` rebuild both produce unchanged output under 1.15.0.
+
 ## [1.0.0-beta.12] - 2026-07-20
 
 ### Added
