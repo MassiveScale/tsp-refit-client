@@ -189,6 +189,12 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
           nullable: true,
           description: "DI registration extension class template.",
         },
+        "merge-patch": {
+          type: "string",
+          nullable: true,
+          description:
+            "Generic MergePatch<T> request-body builder template, emitted only when a merge-patch body is used.",
+        },
       },
       required: [],
     },

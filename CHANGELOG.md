@@ -10,8 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added first lint rule: `internal-access-leak`, warning when a public operation or model references an `@access(Access.internal)` type, which would fail to compile as generated C#.
+- New `merge-patch` template override key, for customizing the emitted `MergePatch<T>` helper.
 
 ### Fixed
+
+- Generated clients using a merge-patch body now compile. A `MergePatchUpdate<T>` body has been mapped to `MergePatch<T>` since `1.0.0-beta.12`, but nothing ever emitted that type, so consumers hit `error CS0246: The type or namespace name 'MergePatch<>' could not be found`. The emitter now writes `Models/MergePatch.g.cs` whenever a generated file references the helper, into the same namespace as the records so both the models and the per-version interface namespaces resolve it without a `using`. Services with no merge-patch body are unaffected — no extra file is emitted. If a user type already claims the `MergePatch` output name, an `output-name-collision` diagnostic is reported instead of the helper silently overwriting it.
+
+  Unlike the read-oriented helper `@massivescale/tsp-aspnetcore-api` emits for controllers, the client-side helper is a write-oriented builder: `Set` / `Clear` / `Remove` compose the RFC 7396 payload, `IsDefined` / `IsNull` inspect it, and each has an expression overload (`patch.Set(w => w.Name, "…")`) that resolves the JSON wire name from the record's `[JsonPropertyName]` attribute.
 
 - `internal-access-leak`: fixed message wording that duplicated the word "type" (e.g. "its parameter type type") for all three diagnosed cases (parameter, return, and property leaks).
 - `internal-access-leak`: a parameter-type leak is now reported against the specific parameter's `ModelProperty`, not the whole `Operation`, giving a more precise diagnostic location — matching how property-type leaks already target the specific `ModelProperty`.

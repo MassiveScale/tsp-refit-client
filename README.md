@@ -28,28 +28,29 @@ options:
 
 ### Emitter options
 
-| Option                        | Type      | Default                                       | Description                                                                                                                                                                                                                                              |
-| ----------------------------- | --------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `project-name`                | `string`  | TypeSpec namespace + `Client`                 | Full project name for the `.csproj` filename (e.g. `PetStoreClient` → `PetStoreClient.csproj`). Dots are valid; C# identifiers use only the final segment.                                                                                               |
-| `client-name`                 | `string`  | Derived from `project-name`                   | Display name for the client. Controls the DI extension class/method prefix (e.g. `PetStore` → `PetStoreExtensions.g.cs`, `AddPetStore(...)`). Also used as the default NuGet `<Title>` unless `nuget-title` is set.                                      |
-| `root-namespace`              | `string`  | TypeSpec namespace + `.Client`                | Overrides the root C# namespace for all generated files.                                                                                                                                                                                                 |
-| `net-version`                 | `string`  | `net8.0`                                      | Target .NET version(s) written into the `.csproj`. Use a single TFM (e.g. `net8.0`) or a semicolon-separated list for multi-targeting (e.g. `net8.0;net9.0`).                                                                                            |
-| `target-version`              | `string`  | Latest declared version                       | Emit only this API version. Ignored when `all-versions` is `true`.                                                                                                                                                                                       |
-| `all-versions`                | `boolean` | `false`                                       | When `true`, generate clients for every declared API version in separate subfolders.                                                                                                                                                                     |
-| `version-in-namespace`        | `boolean` | `false`                                       | When `true`, append the sanitized API version to the C# namespace in single-version mode. Has no effect when `all-versions` is `true`.                                                                                                                   |
-| `route-prefix`                | `string`  | `api/{version}`                               | Prefix prepended to every emitted route path. The `{version}` token is replaced by the API version value (e.g. `api/{version}` + `v1.0` → `api/v1.0/items`). When no version is available, `{version}` is removed (`api/items`). Set to `""` to disable. |
-| `emit-project-file`           | `boolean` | `true`                                        | Set to `false` to skip `.csproj` generation.                                                                                                                                                                                                             |
-| `overwrite-project-file`      | `boolean` | `false`                                       | When `false`, the `.csproj` is only written if it does not already exist.                                                                                                                                                                                |
-| `clean-output-dir`            | `boolean` | `true`                                        | When `true` (default), all `*.g.cs` files in the output directory are deleted before emitting. Non-generated files and project files are preserved. Set to `false` to skip the cleanup pass.                                                             |
-| `abstract-discriminated-base` | `boolean` | `true`                                        | When `true` (default), models in a `@discriminator` hierarchy with no concrete wire shape of their own (the discriminated base, and pass-through grouping models) are emitted as `abstract record`. Set to `false` to keep them concrete/instantiable.   |
-| `dotnet-format`               | `boolean` | `true`                                        | When `true`, run `dotnet format --no-restore` on the output directory after emitting. Set to `false` to skip formatting (e.g. in CI pipelines where formatting is handled separately).                                                                   |
-| `nuget-package-id`            | `string`  | —                                             | NuGet `<PackageId>`.                                                                                                                                                                                                                                     |
-| `nuget-version`               | `string`  | Auto-derived from TypeSpec version            | NuGet `<Version>`. When not set, derived from the targeted TypeSpec API version: parsed as semver if possible (e.g. `v2.1` → `2.1.0`), otherwise formatted as CalVer (`YYYY.MM.DD`).                                                                     |
-| `nuget-authors`               | `string`  | —                                             | NuGet `<Authors>` (comma-separated).                                                                                                                                                                                                                     |
-| `nuget-description`           | `string`  | `Refit client for the {namespace} API`        | NuGet `<Description>`.                                                                                                                                                                                                                                   |
-| `nuget-title`                 | `string`  | Value of `client-name` (if set), else omitted | NuGet `<Title>`.                                                                                                                                                                                                                                         |
-| `nuget-tags`                  | `string`  | —                                             | NuGet `<PackageTags>` (space-separated).                                                                                                                                                                                                                 |
-| `templates`                   | `object`  | —                                             | Override individual built-in Handlebars templates. Keys: `file`, `record`, `enum`, `refit-interface`, `csproj`, `extensions`.                                                                                                                            |
+| Option                        | Type       | Default                                       | Description                                                                                                                                                                                                                                                         |
+| ----------------------------- | ---------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `project-name`                | `string`   | TypeSpec namespace + `Client`                 | Full project name for the `.csproj` filename (e.g. `PetStoreClient` → `PetStoreClient.csproj`). Dots are valid; C# identifiers use only the final segment.                                                                                                          |
+| `client-name`                 | `string`   | Derived from `project-name`                   | Display name for the client. Controls the DI extension class/method prefix (e.g. `PetStore` → `PetStoreExtensions.g.cs`, `AddPetStore(...)`). Also used as the default NuGet `<Title>` unless `nuget-title` is set.                                                 |
+| `root-namespace`              | `string`   | TypeSpec namespace + `.Client`                | Overrides the root C# namespace for all generated files.                                                                                                                                                                                                            |
+| `additional-usings`           | `string[]` | —                                             | Extra `using` directives appended to every emitted C# file. Use this when the service references types declared outside its own TypeSpec namespace but emitted elsewhere — for example a sibling emitter's shared namespace — so the generated code still compiles. |
+| `net-version`                 | `string`   | `net8.0`                                      | Target .NET version(s) written into the `.csproj`. Use a single TFM (e.g. `net8.0`) or a semicolon-separated list for multi-targeting (e.g. `net8.0;net9.0`).                                                                                                       |
+| `target-version`              | `string`   | Latest declared version                       | Emit only this API version. Ignored when `all-versions` is `true`.                                                                                                                                                                                                  |
+| `all-versions`                | `boolean`  | `false`                                       | When `true`, generate clients for every declared API version in separate subfolders.                                                                                                                                                                                |
+| `version-in-namespace`        | `boolean`  | `false`                                       | When `true`, append the sanitized API version to the C# namespace in single-version mode. Has no effect when `all-versions` is `true`.                                                                                                                              |
+| `route-prefix`                | `string`   | `api/{version}`                               | Prefix prepended to every emitted route path. The `{version}` token is replaced by the API version value (e.g. `api/{version}` + `v1.0` → `api/v1.0/items`). When no version is available, `{version}` is removed (`api/items`). Set to `""` to disable.            |
+| `emit-project-file`           | `boolean`  | `true`                                        | Set to `false` to skip `.csproj` generation.                                                                                                                                                                                                                        |
+| `overwrite-project-file`      | `boolean`  | `false`                                       | When `false`, the `.csproj` is only written if it does not already exist.                                                                                                                                                                                           |
+| `clean-output-dir`            | `boolean`  | `true`                                        | When `true` (default), all `*.g.cs` files in the output directory are deleted before emitting. Non-generated files and project files are preserved. Set to `false` to skip the cleanup pass.                                                                        |
+| `abstract-discriminated-base` | `boolean`  | `true`                                        | When `true` (default), models in a `@discriminator` hierarchy with no concrete wire shape of their own (the discriminated base, and pass-through grouping models) are emitted as `abstract record`. Set to `false` to keep them concrete/instantiable.              |
+| `dotnet-format`               | `boolean`  | `true`                                        | When `true`, run `dotnet format --no-restore` on the output directory after emitting. Set to `false` to skip formatting (e.g. in CI pipelines where formatting is handled separately).                                                                              |
+| `nuget-package-id`            | `string`   | —                                             | NuGet `<PackageId>`.                                                                                                                                                                                                                                                |
+| `nuget-version`               | `string`   | Auto-derived from TypeSpec version            | NuGet `<Version>`. When not set, derived from the targeted TypeSpec API version: parsed as semver if possible (e.g. `v2.1` → `2.1.0`), otherwise formatted as CalVer (`YYYY.MM.DD`).                                                                                |
+| `nuget-authors`               | `string`   | —                                             | NuGet `<Authors>` (comma-separated).                                                                                                                                                                                                                                |
+| `nuget-description`           | `string`   | `Refit client for the {namespace} API`        | NuGet `<Description>`.                                                                                                                                                                                                                                              |
+| `nuget-title`                 | `string`   | Value of `client-name` (if set), else omitted | NuGet `<Title>`.                                                                                                                                                                                                                                                    |
+| `nuget-tags`                  | `string`   | —                                             | NuGet `<PackageTags>` (space-separated).                                                                                                                                                                                                                            |
+| `templates`                   | `object`   | —                                             | Override individual built-in Handlebars templates. Keys: `file`, `record`, `enum`, `refit-interface`, `csproj`, `extensions`, `merge-patch`.                                                                                                                        |
 
 ### Decorators
 
@@ -233,6 +234,47 @@ model Widget {
 ```
 
 Other `@encode` targets (dates, durations, bytes) are not yet honored and map by their declared type.
+
+### Merge-patch request bodies
+
+A PATCH operation whose body is `MergePatchUpdate<T>` (or `MergePatchUpdateReplaceOnly<T>` / `MergePatchCreateOrUpdate<T>`) maps to a generic `MergePatch<T>` parameter:
+
+```typespec
+@route("/widgets")
+interface Widgets {
+  @patch update(@path id: string, @body body: MergePatchUpdate<Widget>): Widget;
+}
+```
+
+```csharp
+[Patch("/api/widgets/{id}")]
+Task<Widget> UpdateAsync(string id, [Body] MergePatch<Widget> body, ...);
+```
+
+`MergePatch<T>` is a helper class the emitter writes to `Models/MergePatch.g.cs`, in the same namespace as the records. It is only emitted when something actually uses a merge-patch body, so a service without one gets no extra file.
+
+The point of a merge patch (RFC 7396) is that it carries only the fields you want changed. The helper is a builder for exactly that:
+
+```csharp
+var patch = new MergePatch<Widget>()
+    .Set(w => w.Name, "new name")  // send a new value
+    .Clear(w => w.Description);    // send an explicit null, clearing the field
+
+await client.Widgets.UpdateAsync(id, patch, ct);
+// body: {"name":"new name","description":null}
+```
+
+| Method                 | Effect on the request body                                              |
+| ---------------------- | ----------------------------------------------------------------------- |
+| `Set(selector, value)` | Sends the property with that value.                                     |
+| `Clear(selector)`      | Sends the property as JSON `null`, asking the server to clear it.       |
+| `Remove(selector)`     | Drops the property from the body, so the request says nothing about it. |
+| `IsDefined(selector)`  | Whether the body carries the property (including an explicit `null`).   |
+| `IsNull(selector)`     | Whether the body carries the property as `null`.                        |
+
+Every method also takes a plain JSON wire name (`patch.Set("displayName", "…")`) if you need a property that isn't on the model. With the expression form, the wire name is read from the record's `[JsonPropertyName]` attribute, so you don't have to know it.
+
+> **Note:** this is the client-side counterpart to the `MergePatch<T>` emitted by `@massivescale/tsp-aspnetcore-api`. That one is built for _reading_ a patch in a controller; this one is built for _writing_ one. If your solution references both generated projects, the two types live in different namespaces and do not conflict — but don't `using` both into the same file.
 
 ## Development
 

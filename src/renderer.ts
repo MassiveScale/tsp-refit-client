@@ -24,7 +24,13 @@ const TEMPLATES_DIR = resolve(
  * Each name maps to a `<name>.hbs` file inside {@link TEMPLATES_DIR}.
  */
 export type TemplateName =
-  "file" | "record" | "enum" | "refit-interface" | "csproj" | "extensions";
+  | "file"
+  | "record"
+  | "enum"
+  | "refit-interface"
+  | "csproj"
+  | "extensions"
+  | "merge-patch";
 
 /**
  * Partial map of template names to absolute file paths used to override the
@@ -213,6 +219,8 @@ export interface Renderer {
   renderCsproj(view: CsprojView): string;
   /** Renders the DI registration extension class body. */
   renderExtensions(view: ExtensionsView): string;
+  /** Renders the static generic `MergePatch<T>` helper class body. Takes no view model. */
+  renderMergePatch(): string;
 }
 
 // ---------------------------------------------------------------------------
@@ -309,6 +317,11 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
     "extensions",
     overrides.extensions,
   );
+  const mergePatchTemplate = loadTemplate(
+    env,
+    "merge-patch",
+    overrides["merge-patch"],
+  );
 
   return {
     renderFile(view) {
@@ -341,6 +354,10 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
 
     renderExtensions(view) {
       return extensionsTemplate(view);
+    },
+
+    renderMergePatch() {
+      return mergePatchTemplate({});
     },
   };
 }

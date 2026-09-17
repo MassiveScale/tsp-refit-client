@@ -30,7 +30,19 @@ import {
   escapeXml,
   sortUsings,
   toCsPropName,
+  MERGE_PATCH_HELPER_NAME,
 } from "./utils.js";
+
+/** `using` directives required by the emitted `MergePatch<T>` helper file. */
+const MERGE_PATCH_HELPER_USINGS = [
+  "System",
+  "System.Collections.Generic",
+  "System.Diagnostics.CodeAnalysis",
+  "System.Linq.Expressions",
+  "System.Reflection",
+  "System.Text.Json",
+  "System.Text.Json.Serialization",
+];
 
 /**
  * Builds the renderer property views for a set of model properties: C# type,
@@ -433,6 +445,35 @@ export function buildEnum(
     ]),
     body,
     fileName: `${enumName}.g.cs`,
+  };
+  return renderer.renderFile(fileView);
+}
+
+/**
+ * Renders the static generic `MergePatch<T>` helper file, the C# type that
+ * merge-patch request bodies are mapped to. Emitted into the same namespace as the
+ * records so that interfaces in a nested per-version namespace resolve it too.
+ *
+ * @param csNs - C# namespace the helper is emitted into (the root model namespace).
+ * @param renderer - Handlebars renderer used to produce the file contents.
+ * @param additionalUsings - Extra `using` directives from the `additional-usings`
+ *   option, appended to every emitted file regardless of whether this particular
+ *   file references anything from them (see `EmitterOptions["additional-usings"]`).
+ * @returns The full C# source of the generated helper file.
+ */
+export function buildMergePatchHelper(
+  csNs: string,
+  renderer: Renderer,
+  additionalUsings: Set<string>,
+): string {
+  const fileName = `${MERGE_PATCH_HELPER_NAME}.g.cs`;
+  const fileView: FileView = {
+    namespace: csNs,
+    usings: sortUsings([
+      ...new Set([...MERGE_PATCH_HELPER_USINGS, ...additionalUsings]),
+    ]),
+    body: renderer.renderMergePatch(),
+    fileName,
   };
   return renderer.renderFile(fileView);
 }

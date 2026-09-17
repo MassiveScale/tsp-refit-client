@@ -23,6 +23,25 @@ import {
 import { getMergePatchSource } from "@typespec/http/experimental/merge-patch";
 import { getClientName } from "./decorators.js";
 
+/** C# name of the generic merge-patch helper class emitted alongside the models. */
+export const MERGE_PATCH_HELPER_NAME = "MergePatch";
+
+/**
+ * Whether a rendered C# file references the {@link MERGE_PATCH_HELPER_NAME} helper.
+ *
+ * Merge-patch bodies are rewritten to `MergePatch<T>` deep inside {@link mapType},
+ * far from the emitter that has to decide whether the helper file is needed at all.
+ * Rather than thread an accumulator through every type-mapping signature, the
+ * emitter scans what it has already rendered. The lookbehind keeps a user model
+ * named e.g. `WidgetMergePatch` or a qualified `Other.MergePatch<T>` from matching.
+ *
+ * @param content - Rendered C# source of a generated file.
+ * @returns `true` if the file uses the helper and it therefore has to be emitted.
+ */
+export function referencesMergePatchHelper(content: string): boolean {
+  return new RegExp(`(?<![\\w.])${MERGE_PATCH_HELPER_NAME}<`).test(content);
+}
+
 /**
  * Maps a TypeSpec type to its C# type expression (e.g. `int32` → `int`,
  * `Widget[]` → `List<Widget>`, `Record<string>` → `Dictionary<string, string>`).
@@ -63,8 +82,10 @@ export function mapType(
       // distinct, flattened, all-optional Model rather than a template instance of `T` — so the
       // `templateMapper` branch below never fires for them. `@typespec/http` tracks the original
       // resource model (`T`) for every such synthesized model; redirect the reference to the
-      // hand-authored generic `MergePatch<T>` helper instead of emitting the synthesized model's
-      // own (unbacked) literal name as a phantom C# type.
+      // generic `MergePatch<T>` helper instead of emitting the synthesized model's own
+      // (unbacked) literal name as a phantom C# type. The emitter writes the helper itself
+      // whenever a generated file comes back referencing it — see
+      // {@link referencesMergePatchHelper}.
       const mergePatchSource = getMergePatchSource(program, m);
       if (mergePatchSource) {
         if (mergePatchSource.name) {
@@ -75,7 +96,7 @@ export function mapType(
           ? (getClientName(program, mergePatchSource) ?? mergePatchSource.name)
           : mapType(mergePatchSource, program, models, enums);
 
-        return `MergePatch<${targetCsType}>`;
+        return `${MERGE_PATCH_HELPER_NAME}<${targetCsType}>`;
       }
 
       // Template instance

@@ -8,6 +8,8 @@ import {
   escapeXml,
   sanitizeVersionForNs,
   sortUsings,
+  referencesMergePatchHelper,
+  MERGE_PATCH_HELPER_NAME,
 } from "../src/utils.js";
 
 describe("utils", () => {
@@ -85,5 +87,48 @@ describe("utils", () => {
       sortUsings(input);
       deepStrictEqual(input, ["Refit", "System"]);
     });
+  });
+
+  describe("referencesMergePatchHelper", () => {
+    it("detects a bare generic reference to the helper", () =>
+      strictEqual(
+        referencesMergePatchHelper(
+          "    Task<Widget> UpdateAsync([Body] MergePatch<Widget> body);",
+        ),
+        true,
+      ));
+
+    it("detects the helper's own declaration", () =>
+      strictEqual(
+        referencesMergePatchHelper("public class MergePatch<T>"),
+        true,
+      ));
+
+    it("ignores a type whose name merely ends with the helper name", () =>
+      strictEqual(
+        referencesMergePatchHelper("List<WidgetMergePatch<Widget>> items"),
+        false,
+      ));
+
+    it("ignores a namespace-qualified helper from another assembly", () =>
+      strictEqual(
+        referencesMergePatchHelper("Other.Api.MergePatch<Widget> body"),
+        false,
+      ));
+
+    it("ignores a non-generic mention of the name", () =>
+      strictEqual(
+        referencesMergePatchHelper("// see MergePatch for details"),
+        false,
+      ));
+
+    it("returns false for content with no mention at all", () =>
+      strictEqual(referencesMergePatchHelper("public record Widget;"), false));
+
+    it("is driven by MERGE_PATCH_HELPER_NAME", () =>
+      strictEqual(
+        referencesMergePatchHelper(`${MERGE_PATCH_HELPER_NAME}<Widget>`),
+        true,
+      ));
   });
 });

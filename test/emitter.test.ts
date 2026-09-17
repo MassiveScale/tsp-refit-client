@@ -349,4 +349,206 @@ describe("emitter", () => {
       "Expected no stray usings when additional-usings is not set",
     );
   });
+
+  describe("MergePatch<T> helper", () => {
+    const PATCH_API = `
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      model Widget { id: string; name: string; }
+
+      @route("/widgets")
+      interface Widgets {
+        @patch update(@path id: string, @body body: MergePatchUpdate<Widget>): Widget;
+      }
+    `;
+
+    const NO_PATCH_API = `
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      model Widget { id: string; name: string; }
+
+      @route("/widgets")
+      interface Widgets {
+        @get list(): Widget[];
+      }
+    `;
+
+    function findHelper(results: Record<string, string>): string | undefined {
+      return Object.keys(results).find((k) => k.endsWith("MergePatch.g.cs"));
+    }
+
+    it("emits the helper into Models/ when a merge-patch body is used", async () => {
+      const results = await emit(PATCH_API);
+
+      const helperFile = findHelper(results);
+      ok(helperFile, "Expected MergePatch.g.cs to be emitted");
+      ok(
+        helperFile.includes("Models/"),
+        `Expected the helper under Models/, got ${helperFile}`,
+      );
+
+      const content = results[helperFile];
+      ok(
+        content.includes("public class MergePatch<T>"),
+        "Expected the generic helper class declaration",
+      );
+      ok(
+        content.includes("namespace TestApi.Client;"),
+        "Expected the helper in the same namespace as the records",
+      );
+    });
+
+    it("declares the usings the helper body needs", async () => {
+      const results = await emit(PATCH_API);
+      const content = results[findHelper(results)!];
+
+      for (const using of [
+        "using System;",
+        "using System.Collections.Generic;",
+        "using System.Diagnostics.CodeAnalysis;",
+        "using System.Linq.Expressions;",
+        "using System.Reflection;",
+        "using System.Text.Json;",
+        "using System.Text.Json.Serialization;",
+      ]) {
+        ok(content.includes(using), `Expected ${using} in the helper file`);
+      }
+    });
+
+    it("emits a write-oriented builder API rather than the server's read-oriented one", async () => {
+      const results = await emit(PATCH_API);
+      const content = results[findHelper(results)!];
+
+      ok(
+        content.includes("[JsonExtensionData]") &&
+          content.includes("Dictionary<string, JsonElement> Properties"),
+        "Expected the extension-data payload bag",
+      );
+      for (const member of [
+        "public MergePatch<T> Set<TValue>(",
+        "public MergePatch<T> Clear<TValue>(",
+        "public MergePatch<T> Clear(",
+        "public MergePatch<T> Remove<TValue>(",
+        "public MergePatch<T> Remove(",
+        "public bool IsDefined(",
+        "public bool IsNull(",
+      ]) {
+        ok(content.includes(member), `Expected member ${member}`);
+      }
+      ok(
+        content.includes("Expression<Func<T, TValue>> property"),
+        "Expected the expression-based overloads that resolve wire names",
+      );
+      ok(
+        content.includes("GetCustomAttribute<JsonPropertyNameAttribute>()"),
+        "Expected wire names resolved from [JsonPropertyName]",
+      );
+      ok(
+        !content.includes("GetString(string propertyName)"),
+        "Did not expect the server helper's typed readers on a client-side builder",
+      );
+    });
+
+    it("does not emit the helper when nothing uses a merge-patch body", async () => {
+      const results = await emit(NO_PATCH_API);
+      strictEqual(
+        findHelper(results),
+        undefined,
+        "Did not expect MergePatch.g.cs without a merge-patch body",
+      );
+    });
+
+    it("appends additional-usings to the helper file", async () => {
+      const results = await emit(PATCH_API, {
+        "additional-usings": ["Shared.Models"],
+      });
+      ok(
+        results[findHelper(results)!].includes("using Shared.Models;"),
+        "Expected additional-usings in the helper file",
+      );
+    });
+
+    it("emits the helper once, in the base namespace, when versions live in their own namespace", async () => {
+      const results = await emit(
+        `
+        import "@typespec/http";
+        import "@typespec/versioning";
+        using Http;
+        using Versioning;
+
+        @service(#{ title: "Test API" })
+        @versioned(Versions)
+        namespace TestApi;
+
+        enum Versions { v1: "v1.0" }
+
+        model Widget { id: string; name: string; }
+
+        @route("/widgets")
+        interface Widgets {
+          @patch update(@path id: string, @body body: MergePatchUpdate<Widget>): Widget;
+        }
+      `,
+        { "version-in-namespace": true },
+      );
+
+      const helperFiles = Object.keys(results).filter((k) =>
+        k.endsWith("MergePatch.g.cs"),
+      );
+      strictEqual(helperFiles.length, 1, "Expected exactly one helper file");
+      ok(
+        results[helperFiles[0]].includes("namespace TestApi.Client;"),
+        "Expected the helper in the base namespace, which the per-version namespace nests under",
+      );
+
+      const ifaceFile = Object.keys(results).find((k) =>
+        k.endsWith("IWidgets.g.cs"),
+      );
+      ok(
+        results[ifaceFile!].includes("namespace TestApi.Client.V1_0;"),
+        "Expected the interface in the per-version namespace",
+      );
+    });
+
+    it("reports a collision instead of overwriting a user type named MergePatch", async () => {
+      const [results, diags] = await emitWithDiagnostics(`
+        import "@typespec/http";
+        using Http;
+
+        @service(#{ title: "Test API" })
+        namespace TestApi;
+
+        model Widget { id: string; name: string; }
+        model MergePatch { note: string; }
+
+        @route("/widgets")
+        interface Widgets {
+          @patch update(@path id: string, @body body: MergePatchUpdate<Widget>): Widget;
+          @post note(@body body: MergePatch): Widget;
+        }
+      `);
+
+      ok(
+        diags.some(
+          (d) =>
+            d.code === "@massivescale/tsp-refit-client/output-name-collision",
+        ),
+        "Expected output-name-collision diagnostic",
+      );
+      const helperFile = findHelper(results);
+      ok(helperFile, "Expected the user's own MergePatch.g.cs to survive");
+      ok(
+        !results[helperFile].includes("public class MergePatch<T>"),
+        "Expected the user's model to win, not be overwritten by the helper",
+      );
+    });
+  });
 });

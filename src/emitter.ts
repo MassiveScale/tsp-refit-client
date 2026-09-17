@@ -41,13 +41,18 @@ import {
   buildRecord,
   buildFilteredRecord,
   buildEnum,
+  buildMergePatchHelper,
   collectDerivedModels,
   isEmittable,
   isEmittableEnum,
 } from "./models.js";
 import { buildExtensions } from "./client.js";
 import { buildCsproj, deriveNugetVersion } from "./project.js";
-import { sanitizeVersionForNs } from "./utils.js";
+import {
+  sanitizeVersionForNs,
+  referencesMergePatchHelper,
+  MERGE_PATCH_HELPER_NAME,
+} from "./utils.js";
 
 /** Records which declaration first claimed a given output file name, for collision reporting. */
 type OutputNameOwner = {
@@ -293,6 +298,18 @@ async function emitService(
   const enums = new Map<string, Enum>();
   const modelOutputOwners = new Map<string, OutputNameOwner>();
 
+  // Merge-patch bodies are rewritten to `MergePatch<T>` deep inside type mapping,
+  // so the only signal that the helper class is needed is that a rendered file
+  // came back referencing it.
+  let needsMergePatchHelper = false;
+  const writeCsFile = async (
+    filePath: string,
+    content: string,
+  ): Promise<void> => {
+    needsMergePatchHelper ||= referencesMergePatchHelper(content);
+    await writeFile(program, filePath, content);
+  };
+
   // Group operations by container (Interface or Namespace)
   const byContainer = new Map<
     string,
@@ -351,8 +368,7 @@ async function emitService(
           rawRoutePrefix,
           additionalUsings,
         );
-        await writeFile(
-          program,
+        await writeCsFile(
           resolvePath(vDir, "Endpoints", `I${name}.g.cs`),
           content,
         );
@@ -373,11 +389,7 @@ async function emitService(
         const rtDir = useVersionedFolders
           ? vDir
           : resolvePath(outputDir, "Models");
-        await writeFile(
-          program,
-          resolvePath(rtDir, `${rt.name}.g.cs`),
-          content,
-        );
+        await writeCsFile(resolvePath(rtDir, `${rt.name}.g.cs`), content);
       }
       if (vInterfaceNames.length > 0) {
         const content = buildExtensions(
@@ -386,8 +398,7 @@ async function emitService(
           vInterfaceNames,
           renderer,
         );
-        await writeFile(
-          program,
+        await writeCsFile(
           resolvePath(vDir, `${clientName}Extensions.g.cs`),
           content,
         );
@@ -415,8 +426,7 @@ async function emitService(
         rawRoutePrefix,
         additionalUsings,
       );
-      await writeFile(
-        program,
+      await writeCsFile(
         resolvePath(outputDir, "Endpoints", `I${name}.g.cs`),
         content,
       );
@@ -433,8 +443,7 @@ async function emitService(
         renderer,
         additionalUsings,
       );
-      await writeFile(
-        program,
+      await writeCsFile(
         resolvePath(outputDir, "Models", `${rt.name}.g.cs`),
         content,
       );
@@ -446,8 +455,7 @@ async function emitService(
         interfaceNames,
         renderer,
       );
-      await writeFile(
-        program,
+      await writeCsFile(
         resolvePath(outputDir, `${clientName}Extensions.g.cs`),
         content,
       );
@@ -484,8 +492,7 @@ async function emitService(
       options["abstract-discriminated-base"] !== false,
       additionalUsings,
     );
-    await writeFile(
-      program,
+    await writeCsFile(
       resolvePath(outputDir, "Models", `${recordFileName}.g.cs`),
       content,
     );
@@ -505,10 +512,29 @@ async function emitService(
       continue;
     }
     const content = buildEnum(e, baseNs, program, renderer);
-    await writeFile(
-      program,
+    await writeCsFile(
       resolvePath(outputDir, "Models", `${enumFileName}.g.cs`),
       content,
+    );
+  }
+
+  // The merge-patch helper is only written when something actually referenced it,
+  // and is reserved like a model so a user type of the same name reports a
+  // collision instead of being silently overwritten.
+  if (
+    needsMergePatchHelper &&
+    tryReserveModelOutputName(
+      program,
+      modelOutputOwners,
+      MERGE_PATCH_HELPER_NAME,
+      `the ${MERGE_PATCH_HELPER_NAME}<T> helper`,
+      NoTarget,
+    )
+  ) {
+    await writeFile(
+      program,
+      resolvePath(outputDir, "Models", `${MERGE_PATCH_HELPER_NAME}.g.cs`),
+      buildMergePatchHelper(baseNs, renderer, additionalUsings),
     );
   }
 
@@ -545,7 +571,8 @@ async function emitService(
  * @param owners - Map of already-claimed output names to their first owner.
  * @param name - The output file base name being claimed.
  * @param ownerLabel - Human-readable label of the claiming declaration.
- * @param target - The declaration, used as the diagnostic target.
+ * @param target - The declaration, used as the diagnostic target, or `NoTarget`
+ *   for generated files with no corresponding TypeSpec declaration.
  * @returns `true` if the name was free and is now reserved; `false` on collision.
  */
 function tryReserveModelOutputName(
@@ -553,7 +580,7 @@ function tryReserveModelOutputName(
   owners: Map<string, OutputNameOwner>,
   name: string,
   ownerLabel: string,
-  target: Type,
+  target: Type | typeof NoTarget,
 ): boolean {
   const existing = owners.get(name);
   if (!existing) {
