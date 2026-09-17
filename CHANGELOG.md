@@ -24,8 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bumped development dependencies to the TypeSpec 1.15.0 wave: `@typespec/compiler` and `@typespec/http` to `^1.15.0`, `@typespec/versioning` to `^0.85.0`. The `peerDependencies` floor is now raised to `@typespec/compiler ^1.15.0` and `@typespec/http ^1.15.0` / `@typespec/versioning ^0.85.0` were added as peers, matching the convention used by this package's sibling emitters — a deliberate departure from the previous intentionally-conservative floor (see the 1.14.0 entry below), since consumers of this package's decorators and emitter already require the newer compiler/http/versioning APIs at runtime. `@typespec/rest` remains dev-only (not a peer): it is not imported anywhere under `src/`, so this package has no runtime dependency on it.
+- Bumped development dependencies to the TypeSpec 1.15.0 wave: `@typespec/compiler` and `@typespec/http` to `^1.15.0`, `@typespec/versioning` to `^0.85.0`. The `peerDependencies` floor is now raised to `@typespec/compiler ^1.15.0` and `@typespec/http ^1.15.0` / `@typespec/versioning ^0.85.0` were added as peers, matching the convention used by this package's sibling emitters — a deliberate departure from the previous intentionally-conservative floor (see the 1.14.0 entry below), since consumers of this package's decorators and emitter already require the newer compiler/http/versioning APIs at runtime. `@typespec/rest` was dropped entirely rather than bumped — see below.
+- Declared `@eslint/js` as a direct `devDependency`. `eslint.config.js` has always imported it, but it was only resolvable because npm hoists it out of `eslint`'s own dependency tree — which would break the day `eslint` restructures its dependencies or the package is installed under a stricter node_modules layout.
 - Verified the TypeSpec 1.15.0 change to `using` resolution (a `using X;` before a file-level `namespace` now resolves `X` from the global namespace instead of the file namespace) has no effect here: `lib/main.tsp`'s `using TypeSpec.Reflection;` and the `example/simple-api` fixture's `using Http;` both already target genuine top-level globals. The full test suite and an `example/simple-api` rebuild both produce unchanged output under 1.15.0.
+
+### Removed
+
+- Dropped the `@typespec/rest` development dependency. It is not imported by `src/`, `test/`, `lib/`, or `scripts/`, and nothing in the dependency tree pulls it in. The only fixtures that use it — `example/versioned-api` and `example/simple-api` — declare and install it in their own `package.json`, so they are unaffected; both examples still compile.
 
 ## [1.0.0-beta.12] - 2026-07-20
 
