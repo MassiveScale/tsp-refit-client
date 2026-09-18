@@ -10,8 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added first lint rule: `internal-access-leak`, warning when a public operation or model references an `@access(Access.internal)` type, which would fail to compile as generated C#.
+- New `merge-patch` template override key, for customizing the emitted `MergePatch<T>` helper.
 
 ### Fixed
+
+- Generated clients using a merge-patch body now compile. A `MergePatchUpdate<T>` body has been mapped to `MergePatch<T>` since `1.0.0-beta.12`, but nothing ever emitted that type, so consumers hit `error CS0246: The type or namespace name 'MergePatch<>' could not be found`. The emitter now writes `Models/MergePatch.g.cs` into the same namespace as the records, so both the models and the per-version interface namespaces resolve it without a `using`. The signal is raised by the type mapping at the point it rewrites a merge-patch body, so services with no merge-patch body get no extra file, and a user model that merely happens to be named `MergePatch<T>` does not drag the helper in. If a user type genuinely claims the `MergePatch` output name while a merge-patch body also needs the helper, an `output-name-collision` diagnostic is reported instead of either silently overwriting the other.
+
+  A program declaring several `@service` namespaces gets one helper per namespace that needs it — the extra copies take a namespace-qualified file name. Emitting per service would otherwise have the last service's file overwrite the first's, leaving every earlier namespace referencing a `MergePatch<T>` that is not there.
+
+  Unlike the read-oriented helper `@massivescale/tsp-aspnetcore-api` emits for controllers, the client-side helper is a write-oriented builder: `Set` / `Clear` / `Remove` compose the RFC 7396 payload, `IsDefined` / `IsNull` inspect it, and each has an expression overload (`patch.Set(w => w.Name, "…")`) that resolves the JSON wire name from the record's `[JsonPropertyName]` attribute. The expression overloads accept only a property read directly off the lambda parameter; a nested selector such as `w => w.Name.Length` throws `ArgumentException` rather than resolving to `"Length"` and silently patching a field that does not exist on the wire.
 
 - `internal-access-leak`: fixed message wording that duplicated the word "type" (e.g. "its parameter type type") for all three diagnosed cases (parameter, return, and property leaks).
 - `internal-access-leak`: a parameter-type leak is now reported against the specific parameter's `ModelProperty`, not the whole `Operation`, giving a more precise diagnostic location — matching how property-type leaks already target the specific `ModelProperty`.
@@ -19,8 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bumped development dependencies to the TypeSpec 1.15.0 wave: `@typespec/compiler` and `@typespec/http` to `^1.15.0`, `@typespec/versioning` to `^0.85.0`. The `peerDependencies` floor is now raised to `@typespec/compiler ^1.15.0` and `@typespec/http ^1.15.0` / `@typespec/versioning ^0.85.0` were added as peers, matching the convention used by this package's sibling emitters — a deliberate departure from the previous intentionally-conservative floor (see the 1.14.0 entry below), since consumers of this package's decorators and emitter already require the newer compiler/http/versioning APIs at runtime. `@typespec/rest` remains dev-only (not a peer): it is not imported anywhere under `src/`, so this package has no runtime dependency on it.
+- Bumped development dependencies to the TypeSpec 1.15.0 wave: `@typespec/compiler` and `@typespec/http` to `^1.15.0`, `@typespec/versioning` to `^0.85.0`. The `peerDependencies` floor is now raised to `@typespec/compiler ^1.15.0` and `@typespec/http ^1.15.0` / `@typespec/versioning ^0.85.0` were added as peers, matching the convention used by this package's sibling emitters — a deliberate departure from the previous intentionally-conservative floor (see the 1.14.0 entry below), since consumers of this package's decorators and emitter already require the newer compiler/http/versioning APIs at runtime. `@typespec/rest` was dropped entirely rather than bumped — see below.
+- Declared `@eslint/js` as a direct `devDependency`. `eslint.config.js` has always imported it, but it was only resolvable because npm hoists it out of `eslint`'s own dependency tree — which would break the day `eslint` restructures its dependencies or the package is installed under a stricter node_modules layout.
 - Verified the TypeSpec 1.15.0 change to `using` resolution (a `using X;` before a file-level `namespace` now resolves `X` from the global namespace instead of the file namespace) has no effect here: `lib/main.tsp`'s `using TypeSpec.Reflection;` and the `example/simple-api` fixture's `using Http;` both already target genuine top-level globals. The full test suite and an `example/simple-api` rebuild both produce unchanged output under 1.15.0.
+
+### Removed
+
+- Dropped the `@typespec/rest` development dependency. It is not imported by `src/`, `test/`, `lib/`, or `scripts/`, and nothing in the dependency tree pulls it in. The only fixtures that use it — `example/versioned-api` and `example/simple-api` — declare and install it in their own `package.json`, so they are unaffected; both examples still compile.
 
 ## [1.0.0-beta.12] - 2026-07-20
 

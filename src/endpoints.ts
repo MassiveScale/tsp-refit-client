@@ -40,6 +40,7 @@ import {
   toCsParamName,
   escapeXml,
   sortUsings,
+  type UsedHelpers,
 } from "./utils.js";
 import { flattenProperties } from "./models.js";
 
@@ -186,6 +187,7 @@ function resolveRoutePrefix(
  * @param program - The compiler program.
  * @param models - Accumulator for referenced named models (see {@link mapType}).
  * @param enums - Accumulator for referenced named enums (see {@link mapType}).
+ * @param usedHelpers - Accumulator for required helper classes (see {@link mapType}).
  * @param version - The API version being emitted, or `undefined` when unversioned.
  * @param requestTypes - Accumulator that collects synthesized request payload
  *   types discovered while building methods.
@@ -205,6 +207,7 @@ export function buildInterface(
   program: Program,
   models: Map<string, Model>,
   enums: Map<string, Enum>,
+  usedHelpers: UsedHelpers,
   version: Version | undefined,
   requestTypes: Map<string, RequestType>,
   renderer: Renderer,
@@ -218,6 +221,7 @@ export function buildInterface(
       program,
       models,
       enums,
+      usedHelpers,
       version,
       requestTypes,
       routePrefix,
@@ -259,6 +263,7 @@ export function buildInterface(
  * @param program - The compiler program.
  * @param models - Accumulator for referenced named models (see {@link mapType}).
  * @param enums - Accumulator for referenced named enums (see {@link mapType}).
+ * @param usedHelpers - Accumulator for required helper classes (see {@link mapType}).
  * @param version - The API version being emitted, or `undefined` when unversioned.
  * @param requestTypes - Accumulator for synthesized request payload types.
  * @param routePrefix - The already-resolved route prefix for this version.
@@ -269,6 +274,7 @@ function buildMethodView(
   program: Program,
   models: Map<string, Model>,
   enums: Map<string, Enum>,
+  usedHelpers: UsedHelpers,
   version: Version | undefined,
   requestTypes: Map<string, RequestType>,
   routePrefix: string,
@@ -281,14 +287,26 @@ function buildMethodView(
   const baseMethodName =
     getClientName(program, op.operation) ?? op.operation.name;
   const methodName = toCsMethodName(baseMethodName);
-  const returnType = resolveReturnType(op.responses, program, models, enums);
+  const returnType = resolveReturnType(
+    op.responses,
+    program,
+    models,
+    enums,
+    usedHelpers,
+  );
   const doc = getDoc(program, op.operation);
 
   const requiredParams: string[] = [];
   const optionalParams: string[] = [];
 
   for (const param of op.parameters.parameters) {
-    const csType = mapPropertyType(param.param, program, models, enums);
+    const csType = mapPropertyType(
+      param.param,
+      program,
+      models,
+      enums,
+      usedHelpers,
+    );
     const csParam = toCsParamName(param.param.name);
     const isOptional = param.param.optional;
     const nullSuffix = isOptional ? "?" : "";
@@ -319,7 +337,7 @@ function buildMethodView(
 
   if (op.parameters.body) {
     const body = op.parameters.body;
-    let bodyType = resolveBodyType(body, program, models, enums);
+    let bodyType = resolveBodyType(body, program, models, enums, usedHelpers);
 
     if (
       body.bodyKind === "single" &&
@@ -387,6 +405,7 @@ function buildMethodView(
  * @param program - The compiler program.
  * @param models - Accumulator for referenced named models (see {@link mapType}).
  * @param enums - Accumulator for referenced named enums (see {@link mapType}).
+ * @param usedHelpers - Accumulator for required helper classes (see {@link mapType}).
  * @returns The C# return type expression (`Task` or `Task<T>`).
  */
 function resolveReturnType(
@@ -394,6 +413,7 @@ function resolveReturnType(
   program: Program,
   models: Map<string, Model>,
   enums: Map<string, Enum>,
+  usedHelpers: UsedHelpers,
 ): string {
   for (const resp of responses) {
     const sc = resp.statusCodes;
@@ -407,7 +427,13 @@ function resolveReturnType(
 
     for (const content of resp.responses) {
       if (content.body) {
-        const t = resolveBodyType(content.body, program, models, enums);
+        const t = resolveBodyType(
+          content.body,
+          program,
+          models,
+          enums,
+          usedHelpers,
+        );
         if (t !== "void") return `Task<${t}>`;
       }
     }
@@ -423,6 +449,7 @@ function resolveReturnType(
  * @param program - The compiler program.
  * @param models - Accumulator for referenced named models (see {@link mapType}).
  * @param enums - Accumulator for referenced named enums (see {@link mapType}).
+ * @param usedHelpers - Accumulator for required helper classes (see {@link mapType}).
  * @returns The C# type expression for the body.
  */
 function resolveBodyType(
@@ -430,9 +457,10 @@ function resolveBodyType(
   program: Program,
   models: Map<string, Model>,
   enums: Map<string, Enum>,
+  usedHelpers: UsedHelpers,
 ): string {
   if (body.bodyKind === "single") {
-    return mapType(body.type, program, models, enums);
+    return mapType(body.type, program, models, enums, usedHelpers);
   }
   return "object";
 }

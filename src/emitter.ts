@@ -41,13 +41,18 @@ import {
   buildRecord,
   buildFilteredRecord,
   buildEnum,
+  buildMergePatchHelper,
   collectDerivedModels,
   isEmittable,
   isEmittableEnum,
 } from "./models.js";
 import { buildExtensions } from "./client.js";
 import { buildCsproj, deriveNugetVersion } from "./project.js";
-import { sanitizeVersionForNs } from "./utils.js";
+import {
+  sanitizeVersionForNs,
+  MERGE_PATCH_HELPER_NAME,
+  type UsedHelpers,
+} from "./utils.js";
 
 /** Records which declaration first claimed a given output file name, for collision reporting. */
 type OutputNameOwner = {
@@ -77,6 +82,12 @@ export async function $onEmit(
   const [services, diags] = getAllHttpServices(program);
   program.reportDiagnostics(diags);
 
+  // Each service emits into its own C# namespace but shares one output directory,
+  // so the helper has to be collected across all of them and written afterwards —
+  // emitting it per service would have the last service overwrite the file and
+  // leave every earlier namespace referencing a type that isn't there.
+  const mergePatchNamespaces = new Set<string>();
+
   for (const service of services) {
     if (!isService(program, service.namespace)) continue;
     if (service.operations.length === 0) continue;
@@ -87,11 +98,55 @@ export async function $onEmit(
       emitterOutputDir,
       options,
       renderer,
+      mergePatchNamespaces,
     );
   }
 
+  await emitMergePatchHelpers(
+    program,
+    emitterOutputDir,
+    mergePatchNamespaces,
+    renderer,
+    new Set(options["additional-usings"] ?? []),
+  );
+
   if (options["dotnet-format"] !== false) {
     runDotnetFormat(program, emitterOutputDir);
+  }
+}
+
+/**
+ * Writes the `MergePatch<T>` helper once for every C# namespace that needs it.
+ *
+ * With a single service — the normal case — this is one `Models/MergePatch.g.cs`.
+ * A program declaring several `@service` namespaces needs the helper visible in
+ * each of them, and C# allows one class name per namespace but only one file per
+ * path, so the extra copies get a namespace-qualified file name.
+ *
+ * @param program - The compiler program (its host performs the writes).
+ * @param outputDir - The root emitter output directory.
+ * @param namespaces - C# namespaces that reference the helper; empty writes nothing.
+ * @param renderer - Handlebars renderer used to produce the file contents.
+ * @param additionalUsings - Extra `using` directives from the `additional-usings` option.
+ */
+async function emitMergePatchHelpers(
+  program: Program,
+  outputDir: string,
+  namespaces: Set<string>,
+  renderer: Renderer,
+  additionalUsings: Set<string>,
+): Promise<void> {
+  const sorted = [...namespaces].sort();
+  for (const [index, ns] of sorted.entries()) {
+    const fileName =
+      index === 0
+        ? `${MERGE_PATCH_HELPER_NAME}.g.cs`
+        : `${MERGE_PATCH_HELPER_NAME}.${ns}.g.cs`;
+    await writeFile(
+      program,
+      resolvePath(outputDir, "Models", fileName),
+      buildMergePatchHelper(ns, renderer, additionalUsings),
+    );
   }
 }
 
@@ -256,6 +311,9 @@ function runDotnetFormat(program: Program, outputDir: string): void {
  * @param outputDir - The root emitter output directory.
  * @param options - The resolved emitter options.
  * @param renderer - Handlebars renderer used to produce file contents.
+ * @param mergePatchNamespaces - Shared accumulator of C# namespaces needing the
+ *   `MergePatch<T>` helper. This service adds its own namespace when it uses one;
+ *   the caller writes the helper files once every service has been emitted.
  */
 async function emitService(
   program: Program,
@@ -264,6 +322,7 @@ async function emitService(
   outputDir: string,
   options: EmitterOptions,
   renderer: Renderer,
+  mergePatchNamespaces: Set<string>,
 ): Promise<void> {
   const nsFullName = getNamespaceFullName(serviceNs);
   const projectName = options["project-name"] ?? `${nsFullName}Client`;
@@ -292,6 +351,7 @@ async function emitService(
   const models = new Map<string, Model>();
   const enums = new Map<string, Enum>();
   const modelOutputOwners = new Map<string, OutputNameOwner>();
+  const usedHelpers: UsedHelpers = new Set();
 
   // Group operations by container (Interface or Namespace)
   const byContainer = new Map<
@@ -345,6 +405,7 @@ async function emitService(
           program,
           models,
           enums,
+          usedHelpers,
           version,
           requestTypes,
           renderer,
@@ -366,6 +427,7 @@ async function emitService(
           program,
           models,
           enums,
+          usedHelpers,
           renderer,
           additionalUsings,
         );
@@ -409,6 +471,7 @@ async function emitService(
         program,
         models,
         enums,
+        usedHelpers,
         undefined,
         requestTypes,
         renderer,
@@ -430,6 +493,7 @@ async function emitService(
         program,
         models,
         enums,
+        usedHelpers,
         renderer,
         additionalUsings,
       );
@@ -480,6 +544,7 @@ async function emitService(
       program,
       models,
       enums,
+      usedHelpers,
       renderer,
       options["abstract-discriminated-base"] !== false,
       additionalUsings,
@@ -510,6 +575,23 @@ async function emitService(
       resolvePath(outputDir, "Models", `${enumFileName}.g.cs`),
       content,
     );
+  }
+
+  // The helper is only needed when type mapping actually rewrote a merge-patch
+  // body. It is reserved like a model so a user type of the same name reports a
+  // collision instead of being silently overwritten, and the file itself is
+  // written by the caller once every service has had its turn.
+  if (
+    usedHelpers.has(MERGE_PATCH_HELPER_NAME) &&
+    tryReserveModelOutputName(
+      program,
+      modelOutputOwners,
+      MERGE_PATCH_HELPER_NAME,
+      `the ${MERGE_PATCH_HELPER_NAME}<T> helper`,
+      NoTarget,
+    )
+  ) {
+    mergePatchNamespaces.add(baseNs);
   }
 
   // Emit project file
@@ -545,7 +627,8 @@ async function emitService(
  * @param owners - Map of already-claimed output names to their first owner.
  * @param name - The output file base name being claimed.
  * @param ownerLabel - Human-readable label of the claiming declaration.
- * @param target - The declaration, used as the diagnostic target.
+ * @param target - The declaration, used as the diagnostic target, or `NoTarget`
+ *   for generated files with no corresponding TypeSpec declaration.
  * @returns `true` if the name was free and is now reserved; `false` on collision.
  */
 function tryReserveModelOutputName(
@@ -553,7 +636,7 @@ function tryReserveModelOutputName(
   owners: Map<string, OutputNameOwner>,
   name: string,
   ownerLabel: string,
-  target: Type,
+  target: Type | typeof NoTarget,
 ): boolean {
   const existing = owners.get(name);
   if (!existing) {

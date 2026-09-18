@@ -23,17 +23,33 @@ import {
 import { getMergePatchSource } from "@typespec/http/experimental/merge-patch";
 import { getClientName } from "./decorators.js";
 
+/** C# name of the generic merge-patch helper class emitted alongside the models. */
+export const MERGE_PATCH_HELPER_NAME = "MergePatch";
+
+/**
+ * Accumulator recording which hand-written helper classes the mapped types depend
+ * on, so the emitter knows which helper files it has to write. Threaded alongside
+ * the `models` / `enums` accumulators.
+ *
+ * This is a semantic signal raised by {@link mapType} at the point it rewrites a
+ * merge-patch body, not a scan of the rendered C#: a user model that happens to be
+ * named `MergePatch<T>` produces the same text but must not pull in the helper.
+ */
+export type UsedHelpers = Set<string>;
+
 /**
  * Maps a TypeSpec type to its C# type expression (e.g. `int32` → `int`,
  * `Widget[]` → `List<Widget>`, `Record<string>` → `Dictionary<string, string>`).
  *
  * As a side effect, any named model or enum encountered is registered into
- * `models` / `enums` so the caller emits a corresponding record/enum file.
+ * `models` / `enums` so the caller emits a corresponding record/enum file, and any
+ * helper class the mapping depends on is registered into `usedHelpers`.
  *
  * @param type - The TypeSpec type to map.
  * @param program - The compiler program, used for scalar formats and client names.
  * @param models - Accumulator that collects referenced named models by name.
  * @param enums - Accumulator that collects referenced named enums by name.
+ * @param usedHelpers - Accumulator that collects required helper class names.
  * @returns The C# type expression as a string (`"object"` for unmappable types).
  */
 export function mapType(
@@ -41,6 +57,7 @@ export function mapType(
   program: Program,
   models: Map<string, Model>,
   enums: Map<string, Enum>,
+  usedHelpers: UsedHelpers,
 ): string {
   switch (type.kind) {
     case "Scalar":
@@ -49,10 +66,10 @@ export function mapType(
     case "Model": {
       const m = type as Model;
       if (isArrayModelType(m)) {
-        return `List<${mapType(m.indexer!.value, program, models, enums)}>`;
+        return `List<${mapType(m.indexer!.value, program, models, enums, usedHelpers)}>`;
       }
       if (isRecordModelType(m)) {
-        return `Dictionary<string, ${mapType(m.indexer!.value, program, models, enums)}>`;
+        return `Dictionary<string, ${mapType(m.indexer!.value, program, models, enums, usedHelpers)}>`;
       }
       if (isErrorModel(program, m)) {
         // Still emit, just note it
@@ -63,8 +80,10 @@ export function mapType(
       // distinct, flattened, all-optional Model rather than a template instance of `T` — so the
       // `templateMapper` branch below never fires for them. `@typespec/http` tracks the original
       // resource model (`T`) for every such synthesized model; redirect the reference to the
-      // hand-authored generic `MergePatch<T>` helper instead of emitting the synthesized model's
-      // own (unbacked) literal name as a phantom C# type.
+      // generic `MergePatch<T>` helper instead of emitting the synthesized model's own
+      // (unbacked) literal name as a phantom C# type, and record that the helper class now has
+      // to be emitted. This is the only place that signal is raised, so a user model that is
+      // itself named `MergePatch<T>` never drags the helper in.
       const mergePatchSource = getMergePatchSource(program, m);
       if (mergePatchSource) {
         if (mergePatchSource.name) {
@@ -73,9 +92,10 @@ export function mapType(
 
         const targetCsType = mergePatchSource.name
           ? (getClientName(program, mergePatchSource) ?? mergePatchSource.name)
-          : mapType(mergePatchSource, program, models, enums);
+          : mapType(mergePatchSource, program, models, enums, usedHelpers);
 
-        return `MergePatch<${targetCsType}>`;
+        usedHelpers.add(MERGE_PATCH_HELPER_NAME);
+        return `${MERGE_PATCH_HELPER_NAME}<${targetCsType}>`;
       }
 
       // Template instance
@@ -85,7 +105,7 @@ export function mapType(
             (a): a is Type =>
               (a as { entityKind?: string }).entityKind === "Type",
           )
-          .map((a) => mapType(a, program, models, enums));
+          .map((a) => mapType(a, program, models, enums, usedHelpers));
         // Array<T> represented as a template instance (unresolved element type) → List<T>
         if (m.name === "Array" && args.length === 1) {
           return `List<${args[0]}>`;
@@ -135,6 +155,7 @@ export function mapType(
  * @param program - The compiler program, used to read `@encode` and scalar formats.
  * @param models - Accumulator that collects referenced named models by name.
  * @param enums - Accumulator that collects referenced named enums by name.
+ * @param usedHelpers - Accumulator that collects required helper class names.
  * @returns The C# type expression as a string.
  */
 export function mapPropertyType(
@@ -142,6 +163,7 @@ export function mapPropertyType(
   program: Program,
   models: Map<string, Model>,
   enums: Map<string, Enum>,
+  usedHelpers: UsedHelpers,
 ): string {
   const encode = getEncode(program, prop);
   const encodesAsString =
@@ -156,7 +178,7 @@ export function mapPropertyType(
   ) {
     return "string";
   }
-  return mapType(prop.type, program, models, enums);
+  return mapType(prop.type, program, models, enums, usedHelpers);
 }
 
 /**
