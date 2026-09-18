@@ -1,4 +1,4 @@
-import { strictEqual, ok } from "node:assert";
+import { strictEqual, deepStrictEqual, ok } from "node:assert";
 import { describe, it } from "node:test";
 import { emit, emitWithDiagnostics } from "./host.js";
 
@@ -548,6 +548,112 @@ describe("emitter", () => {
       ok(
         !results[helperFile].includes("public class MergePatch<T>"),
         "Expected the user's model to win, not be overwritten by the helper",
+      );
+    });
+
+    it("does not pull in the helper for a user model that is merely named MergePatch", async () => {
+      const [results, diags] = await emitWithDiagnostics(`
+        import "@typespec/http";
+        using Http;
+
+        @service(#{ title: "Test API" })
+        namespace TestApi;
+
+        model Widget { id: string; }
+        model MergePatch<T> { value: T; }
+
+        @route("/widgets")
+        interface Widgets {
+          @post wrap(@body body: MergePatch<Widget>): Widget;
+        }
+      `);
+
+      strictEqual(
+        diags.filter(
+          (d) =>
+            d.code === "@massivescale/tsp-refit-client/output-name-collision",
+        ).length,
+        0,
+        "A user type named MergePatch must not collide with a helper nothing asked for",
+      );
+
+      const helperFile = findHelper(results);
+      ok(helperFile, "Expected the user's own MergePatch.g.cs");
+      ok(
+        !results[helperFile].includes("public class MergePatch<T>"),
+        "Expected the user's record, not the generated helper class",
+      );
+      ok(
+        results[helperFile].includes("record MergePatch<T>"),
+        "Expected the user's generic record to be emitted untouched",
+      );
+    });
+
+    it("emits one helper per namespace when several services use merge-patch bodies", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using Http;
+
+        @service(#{ title: "A" })
+        namespace AlphaApi {
+          model Widget { id: string; name: string; }
+          @route("/widgets")
+          interface Widgets {
+            @patch update(@path id: string, @body body: MergePatchUpdate<Widget>): Widget;
+          }
+        }
+
+        @service(#{ title: "B" })
+        namespace BetaApi {
+          model Gadget { id: string; label: string; }
+          @route("/gadgets")
+          interface Gadgets {
+            @patch update(@path id: string, @body body: MergePatchUpdate<Gadget>): Gadget;
+          }
+        }
+      `);
+
+      const helperFiles = Object.keys(results).filter((k) =>
+        k.includes("MergePatch"),
+      );
+      strictEqual(
+        helperFiles.length,
+        2,
+        `Expected one helper per service namespace, got ${helperFiles.join(", ")}`,
+      );
+
+      const namespaces = helperFiles
+        .map((f) =>
+          results[f]
+            .split("\n")
+            .map((l) => l.trim())
+            .find((l) => l.startsWith("namespace")),
+        )
+        .sort();
+      deepStrictEqual(namespaces, [
+        "namespace AlphaApi.Client;",
+        "namespace BetaApi.Client;",
+      ]);
+
+      for (const f of helperFiles) {
+        ok(
+          results[f].includes("public class MergePatch<T>"),
+          `Expected the helper class in ${f}`,
+        );
+      }
+    });
+
+    it("rejects a nested property selector instead of patching the wrong field", async () => {
+      const results = await emit(PATCH_API);
+      const content = results[findHelper(results)!];
+
+      ok(
+        content.includes("member.Expression != property.Parameters[0]"),
+        "Expected the selector to be required to read directly off the lambda parameter",
+      );
+      ok(
+        content.includes("declared directly on"),
+        "Expected the error message to say the property must be declared on T",
       );
     });
   });

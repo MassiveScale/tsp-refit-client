@@ -251,7 +251,7 @@ interface Widgets {
 Task<Widget> UpdateAsync(string id, [Body] MergePatch<Widget> body, ...);
 ```
 
-`MergePatch<T>` is a helper class the emitter writes to `Models/MergePatch.g.cs`, in the same namespace as the records. It is only emitted when something actually uses a merge-patch body, so a service without one gets no extra file.
+`MergePatch<T>` is a helper class the emitter writes to `Models/MergePatch.g.cs`, in the same namespace as the records. It is only emitted when something actually uses a merge-patch body, so a service without one gets no extra file. (If your TypeSpec declares several `@service` namespaces, each one that needs the helper gets its own copy; the extra files are named after their namespace.)
 
 The point of a merge patch (RFC 7396) is that it carries only the fields you want changed. The helper is a builder for exactly that:
 
@@ -273,6 +273,8 @@ await client.Widgets.UpdateAsync(id, patch, ct);
 | `IsNull(selector)`     | Whether the body carries the property as `null`.                        |
 
 Every method also takes a plain JSON wire name (`patch.Set("displayName", "…")`) if you need a property that isn't on the model. With the expression form, the wire name is read from the record's `[JsonPropertyName]` attribute, so you don't have to know it.
+
+The expression form only accepts a property read straight off the lambda parameter, because a merge patch is a flat map of the model's own JSON properties. Something nested like `w => w.Name.Length` throws `ArgumentException` rather than quietly sending a `"Length"` field the server has never heard of. To patch inside a nested object, `Set` the whole object.
 
 > **Note:** this is the client-side counterpart to the `MergePatch<T>` emitted by `@massivescale/tsp-aspnetcore-api`. That one is built for _reading_ a patch in a controller; this one is built for _writing_ one. If your solution references both generated projects, the two types live in different namespaces and do not conflict — but don't `using` both into the same file.
 

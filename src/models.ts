@@ -31,6 +31,7 @@ import {
   sortUsings,
   toCsPropName,
   MERGE_PATCH_HELPER_NAME,
+  type UsedHelpers,
 } from "./utils.js";
 
 /** `using` directives required by the emitted `MergePatch<T>` helper file. */
@@ -52,6 +53,7 @@ const MERGE_PATCH_HELPER_USINGS = [
  * @param program - The compiler program (for docs, client names, type mapping).
  * @param models - Accumulator for referenced named models (see {@link mapType}).
  * @param enums - Accumulator for referenced named enums (see {@link mapType}).
+ * @param usedHelpers - Accumulator for required helper classes (see {@link mapType}).
  * @returns One {@link PropertyView} per input property.
  */
 function buildPropertyViews(
@@ -59,11 +61,12 @@ function buildPropertyViews(
   program: Program,
   models: Map<string, Model>,
   enums: Map<string, Enum>,
+  usedHelpers: UsedHelpers,
 ): PropertyView[] {
   const result: PropertyView[] = [];
   for (const [, prop] of props) {
     const propDoc = getDoc(program, prop);
-    const csType = mapPropertyType(prop, program, models, enums);
+    const csType = mapPropertyType(prop, program, models, enums, usedHelpers);
     const nullable = prop.optional ? "?" : "";
     const propName = toCsPropName(getClientName(program, prop) ?? prop.name);
     const defaultVal = prop.optional ? undefined : defaultForTypeRaw(csType);
@@ -90,6 +93,7 @@ function buildPropertyViews(
  * @param program - The compiler program.
  * @param models - Accumulator for referenced named models (see {@link mapType}).
  * @param enums - Accumulator for referenced named enums (see {@link mapType}).
+ * @param usedHelpers - Accumulator for required helper classes (see {@link mapType}).
  * @param renderer - Handlebars renderer used to produce the file contents.
  * @param abstractDiscriminatedBase - When `true`, models with no concrete wire
  *   shape (the discriminated base and pass-through grouping models) are emitted
@@ -105,6 +109,7 @@ export function buildRecord(
   program: Program,
   models: Map<string, Model>,
   enums: Map<string, Enum>,
+  usedHelpers: UsedHelpers,
   renderer: Renderer,
   abstractDiscriminatedBase: boolean,
   additionalUsings: Set<string>,
@@ -172,7 +177,13 @@ export function buildRecord(
     recordName,
     genericSuffix,
     access: getAccess(program, model) ?? "public",
-    properties: buildPropertyViews(propsSource, program, models, enums),
+    properties: buildPropertyViews(
+      propsSource,
+      program,
+      models,
+      enums,
+      usedHelpers,
+    ),
     baseRecordName,
     discriminator,
     isAbstract,
@@ -207,6 +218,7 @@ export function buildRecord(
  * @param program - The compiler program.
  * @param models - Accumulator for referenced named models (see {@link mapType}).
  * @param enums - Accumulator for referenced named enums (see {@link mapType}).
+ * @param usedHelpers - Accumulator for required helper classes (see {@link mapType}).
  * @param renderer - Handlebars renderer used to produce the file contents.
  * @param additionalUsings - Extra `using` directives from the `additional-usings`
  *   option, appended to every emitted file regardless of whether this particular
@@ -221,6 +233,7 @@ export function buildFilteredRecord(
   program: Program,
   models: Map<string, Model>,
   enums: Map<string, Enum>,
+  usedHelpers: UsedHelpers,
   renderer: Renderer,
   additionalUsings: Set<string>,
 ): string {
@@ -229,7 +242,7 @@ export function buildFilteredRecord(
     recordName: name,
     genericSuffix: "",
     access: "public",
-    properties: buildPropertyViews(props, program, models, enums),
+    properties: buildPropertyViews(props, program, models, enums, usedHelpers),
   };
 
   const body = renderer.renderRecord(recordView);

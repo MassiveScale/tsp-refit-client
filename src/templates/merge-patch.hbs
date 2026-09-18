@@ -167,6 +167,9 @@ public class MergePatch<T>
     /// Resolves the JSON wire name for a property-selector expression, preferring the
     /// <see cref="JsonPropertyNameAttribute"/> value and falling back to the CLR property name.
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// The expression does not select a property declared directly on <typeparamref name="T"/>.
+    /// </exception>
     private static string ResolveWireName<TValue>(Expression<Func<T, TValue>> property)
     {
         if (property is null) throw new ArgumentNullException(nameof(property));
@@ -176,10 +179,16 @@ public class MergePatch<T>
         var member = property.Body as MemberExpression
             ?? (property.Body as UnaryExpression)?.Operand as MemberExpression;
 
-        if (member?.Member is not PropertyInfo info)
+        // The patch payload is a flat map of T's own JSON properties, so only a
+        // direct read off the lambda parameter is meaningful. A nested selector
+        // such as x => x.Name.Length would otherwise resolve to "Length" and
+        // silently patch a field that does not exist on the wire.
+        if (member?.Member is not PropertyInfo info
+            || member.Expression != property.Parameters[0])
         {
             throw new ArgumentException(
-                "Expression must select a property, for example x => x.Name.",
+                "Expression must select a property declared directly on "
+                    + typeof(T).Name + ", for example x => x.Name.",
                 nameof(property));
         }
 
