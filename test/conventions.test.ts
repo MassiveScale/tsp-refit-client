@@ -240,8 +240,11 @@ describe("diagnostics", () => {
     const readme = readFileSync(resolve(ROOT, "README.md"), "utf-8");
     const start = readme.indexOf("### What is not supported");
     ok(start >= 0, 'README has a "What is not supported" section');
-    const end = readme.indexOf("\n## ", start + 1);
-    const section = readme.slice(start, end < 0 ? undefined : start + 1 + end);
+    // The section ends at the next heading of its level or above.
+    const next = /\n#{2,3} /g;
+    next.lastIndex = start + 1;
+    const end = next.exec(readme)?.index;
+    const section = readme.slice(start, end);
     deepStrictEqual(
       codes
         .filter((code) => code.startsWith("unsupported-"))
