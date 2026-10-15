@@ -9,3 +9,17 @@ dist/
 node_modules/
 # Coverage reports
 coverage/
+
+# Output of 'npm pack'
+*.tgz
+
+# .NET build output
+bin/
+obj/
+
+# Visual Studio per-machine state
+.vs/
+
+# Compile matrix: the spec is generated on every run
+matrix/main.tsp
+matrix/package-lock.json

@@ -6,8 +6,10 @@ on:
   push:
     branches: [main]
 
+# Least privilege: these jobs only read the repository. A job that needs more
+# declares it itself, as the coverage upload does.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
@@ -33,8 +35,10 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Tests run the compiled files in dist, so the build is explicit rather than left
+      # to the prepare script that npm ci happens to run.
       - name: Build & Test
-        run: npm test
+        run: npm run build && npm test
 
   coverage:
     name: Coverage
@@ -83,8 +87,12 @@ jobs:
         with:
           name: coverage-report-typescript
 
+      # Non-fatal while GitHub code quality is not enabled for this repository
+      # (the upload is rejected with HTTP 403). The Coverage job above still
+      # runs the tests under c8. Remove this once code quality is enabled.
       - uses: actions/upload-code-coverage@v1
         with:
           file: cobertura-coverage.xml
           language: TypeScript
           label: code-coverage-agent
+          fail-on-error: false

@@ -1,6 +1,28 @@
 {
   "name": "@massivescale/tsp-refit-client",
-  "version": "1.0.0-beta.12",
+  "version": "1.0.0",
+  "description": "TypeSpec emitter that generates C# API clients built on Refit.",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MassiveScale/tsp-refit-client.git"
+  },
+  "homepage": "https://github.com/MassiveScale/tsp-refit-client#readme",
+  "bugs": {
+    "url": "https://github.com/MassiveScale/tsp-refit-client/issues"
+  },
+  "keywords": [
+    "typespec",
+    "emitter",
+    "csharp",
+    "dotnet",
+    "refit",
+    "http-client",
+    "api-client"
+  ],
   "type": "module",
   "main": "dist/src/index.js",
   "tspMain": "lib/main.tsp",
@@ -11,6 +33,14 @@
       "default": "./dist/src/index.js"
     }
   },
+  "files": [
+    "dist/src",
+    "dist/templates",
+    "lib",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "dependencies": {
     "handlebars": "^4.7.9"
   },
@@ -38,7 +68,7 @@
     "test": "node --test \"dist/test/**/*.test.js\"",
     "lint": "eslint src/ test/ --report-unused-disable-directives --max-warnings=0",
     "lint:fix": "eslint . --report-unused-disable-directives --fix",
-    "format": "prettier .  --write",
+    "format": "prettier . --write",
     "format:check": "prettier --check .",
     "test:coverage": "c8 --reporter=cobertura --reporter=text node --test \"dist/test/**/*.test.js\""
   },
