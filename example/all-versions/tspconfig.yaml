@@ -1,0 +1,7 @@
+emit:
+  - "@massivescale/tsp-refit-client"
+options:
+  "@massivescale/tsp-refit-client":
+    emitter-output-dir: "{output-dir}"
+    overwrite-project-file: true
+    all-versions: true

@@ -22,9 +22,16 @@ describe("project", () => {
     ok(csproj, "Expected .csproj file");
     const content = results[csproj];
     ok(
-      content.includes('<PackageReference Include="Refit"'),
+      content.includes('<PackageReference Include="Refit" Version="11.*" />'),
       "Expected Refit reference",
     );
+    ok(
+      content.includes(
+        '<PackageReference Include="Refit.HttpClientFactory" Version="11.*" />',
+      ),
+      "Expected Refit.HttpClientFactory reference, which provides AddRefitClient",
+    );
+    ok(!content.includes("Flurl"), "Did not expect a Flurl reference");
     ok(
       content.includes("<TargetFramework>net8.0</TargetFramework>"),
       "Expected singular TargetFramework for default",

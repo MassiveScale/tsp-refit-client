@@ -7,33 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-15
+
+The first stable release, and the first published to npm. The emitter now shares its core with its sibling, `@massivescale/tsp-flurl-client`: name validation, collision reporting, version projection, visibility filtering, type mapping, `@encode` support, and the lint rule are the same code, hardened over that emitter's development, with Refit as the transport.
+
+### Breaking
+
+These change what generated C# compiles against or sends. Regenerate, then fix call sites as described.
+
+- **Requests need the generated settings and handler.** Every interface must be created through `Add{Client}(...)` or the new `{Client}.Create(...)`, which install the Refit settings (`{Client}.CreateRefitSettings()`) and message handler (`{Client}.CreateHttpMessageHandler()`) from the generated `Infrastructure/ClientRuntime.g.cs`. An interface created with Refit's defaults would send enums, durations, encodings, text and bytes bodies, headers and cookies in the wrong format.
+- **Header and cookie parameters** are Refit `[Property]` values written by the message handler, instead of `[Header]` attributes that sent `ToString()` (`True`, an enum's C# member name, a culture-formatted date). A `@cookie` parameter is now sent as a cookie instead of as a query parameter.
+- **Unions** map to what is on the wire: `T | null` is `T?`, a union of strings is `string`, and any other union is `System.Text.Json.JsonElement`. Previously every union was `string`, which failed at runtime for anything that is not a JSON string.
+- **Literal types** map to their underlying type (`"dog"` is `string`, `5` is `int`) instead of `object`. An `integer` is a `long` instead of a `double`.
+- **Enums** are read and written through a converter generated for each enum (`ColorJsonConverter`) instead of `JsonStringEnumConverter`, which ignored `[EnumMember]` and sent the C# member name. Numeric members travel as JSON numbers. An unknown value throws `JsonException`, and an undeclared value in a parameter throws `ArgumentException`.
+- **Durations** travel as ISO 8601 (`PT1H30M`) instead of `01:30:00`.
+- **Merge-patch bodies** are `IMergePatch<T>` parameters (implemented by `MergePatch<T>`) sent as `application/merge-patch+json`. Code that passes a `MergePatch<T>` still compiles.
+- **Request records** are named from the model's client name (`ProductCreateRequest` for `@clientName("Product") model Widget`), are generated for nested models, lists, dictionaries and `@discriminator` hierarchies with hidden properties, and are shared between operations only when their visible properties match; otherwise an operation gets its own (`WidgetCreateDraftRequest`).
+- **`all-versions`** emits each version on its own: its endpoints, models, enums and request records in `<version>/Endpoints` and `<version>/Models` under the `<root>.V<version>` namespace, with exactly that version's shape. Previously every version shared one set of models in the root namespace.
+- **Every model and enum is projected onto the emitted version**, so a property, enum member, subtype, model or enum that does not exist in it is left out, and `@renamedFrom`, `@typeChangedFrom`, `@returnTypeChangedFrom`, `@madeOptional` and `@madeRequired` are honoured.
+- **`net-version`** must be `net8.0` or later.
+- **Names that are not valid C#** (`@clientName("../Client")`, a backtick-quoted `` model `my model` ``, an invalid `project-name`, `client-name`, `root-namespace` or `additional-usings` entry) are reported as errors instead of being written into invalid C# or outside the output directory.
+- **The aggregate client is registered with a factory** and its constructor rejects `null`; it is internal, with internal properties, when any interface is `@access(Access.internal)`.
+- **Operations the client cannot send or read correctly are left out** and reported as `unsupported-feature` (multipart and file bodies, a model declared only with a non-JSON media type, success responses that cannot be read by one method) or `unsupported-encoding`, instead of being generated with the wrong behaviour.
+- **Template override keys:** `client-runtime` is new; the variables passed to `refit-interface` and `extensions` changed.
+
 ### Added
 
-- Added first lint rule: `internal-access-leak`, warning when a public operation or model references an `@access(Access.internal)` type, which would fail to compile as generated C#.
-- New `merge-patch` template override key, for customizing the emitted `MergePatch<T>` helper.
+- `{Client}.Create(Uri baseAddress, HttpMessageHandler? innerHandler = null)`, `{Client}.CreateRefitSettings()` and `{Client}.CreateHttpMessageHandler(...)`, for use without dependency injection.
+- Every `@encode` TypeSpec defines, for model properties, query, path, header and cookie parameters, and plain-text bodies and responses: `unixTimestamp` and `rfc7231` dates, `seconds` and `milliseconds` durations, `base64url` bytes, `@encode("string")` on numbers, and `ArrayEncoding` delimited lists. A date-time header defaults to RFC 7231, as TypeSpec specifies.
+- `text/plain` scalar bodies and responses are sent as their wire text and parsed back, raw `bytes` bodies and responses are sent and read raw, text is encoded with the charset its media type declares, and a response declared as both JSON and text is read by the `Content-Type` that arrives.
+- A query array honours `explode`: `tags=a,b` by default, `tags=a&tags=b` with `explode: true`.
+- A path parameter with `allowReserved` keeps its `/` unencoded, through Refit's round-trip placeholder (`{**path}`).
+- A JSON body declared with another JSON media type (`application/vnd.acme+json`) is sent with it.
+- A method whose operation can also succeed without a body returns a nullable type, which is `null` for that status; an optional body that is left out sends no body.
+- Success responses with different bodies are returned as a `JsonElement`.
+- `@encodedName("application/json", ...)` is honoured for property and discriminator names, a required property that allows null is written as `null`, and a property whose only value is `null` is `object?`.
+- `@format("uuid")`, `@format("uri")` and `@format("url")` are honoured on a string property or parameter, not only on a scalar.
+- A parameter honours `@clientName`; a path or query parameter whose wire name differs from its C# name is bound with `[AliasAs]`.
+- Models used only by error responses are generated, so a failed call's body can be read with `ApiException.GetContentAsAsync<T>()`.
+- New diagnostics: `invalid-option`, `invalid-name`, `name-collision`, `unsupported-feature`, `unsupported-encoding`, `unsupported-nested-discriminator`, `unsupported-generic-discriminator`, and `unsupported-value-template`.
+- The `internal-access-leak` lint rule: it warns when a public operation or model references an `@access(Access.internal)` type. It follows the types the emitter writes (parameters, bodies, the model a merge patch patches, success responses, properties, template arguments, discriminated subtypes) and checks operations declared directly in a namespace.
+- The `merge-patch` and `client-runtime` template override keys.
+- `example/kitchen-sink` and `example/all-versions`, an end-to-end test suite (`e2e/Refit.Tests`) that runs the generated C# against a stubbed HTTP layer on .NET 8 and .NET 10, and a compile matrix (`npm run matrix`) that builds every combination of type, position, encoding, media type and awkward name with warnings as errors.
+- The package is published to npm from GitHub releases (`.github/workflows/publish.yml`), with a `files` whitelist and repository metadata.
 
 ### Fixed
 
-- Generated clients using a merge-patch body now compile. A `MergePatchUpdate<T>` body has been mapped to `MergePatch<T>` since `1.0.0-beta.12`, but nothing ever emitted that type, so consumers hit `error CS0246: The type or namespace name 'MergePatch<>' could not be found`. The emitter now writes `Models/MergePatch.g.cs` into the same namespace as the records, so both the models and the per-version interface namespaces resolve it without a `using`. The signal is raised by the type mapping at the point it rewrites a merge-patch body, so services with no merge-patch body get no extra file, and a user model that merely happens to be named `MergePatch<T>` does not drag the helper in. If a user type genuinely claims the `MergePatch` output name while a merge-patch body also needs the helper, an `output-name-collision` diagnostic is reported instead of either silently overwriting the other.
-
-  A program declaring several `@service` namespaces gets one helper per namespace that needs it — the extra copies take a namespace-qualified file name. Emitting per service would otherwise have the last service's file overwrite the first's, leaving every earlier namespace referencing a `MergePatch<T>` that is not there.
-
-  Unlike the read-oriented helper `@massivescale/tsp-aspnetcore-api` emits for controllers, the client-side helper is a write-oriented builder: `Set` / `Clear` / `Remove` compose the RFC 7396 payload, `IsDefined` / `IsNull` inspect it, and each has an expression overload (`patch.Set(w => w.Name, "…")`) that resolves the JSON wire name from the record's `[JsonPropertyName]` attribute. The expression overloads accept only a property read directly off the lambda parameter; a nested selector such as `w => w.Name.Length` throws `ArgumentException` rather than resolving to `"Length"` and silently patching a field that does not exist on the wire.
-
-- `internal-access-leak`: fixed message wording that duplicated the word "type" (e.g. "its parameter type type") for all three diagnosed cases (parameter, return, and property leaks).
-- `internal-access-leak`: a parameter-type leak is now reported against the specific parameter's `ModelProperty`, not the whole `Operation`, giving a more precise diagnostic location — matching how property-type leaks already target the specific `ModelProperty`.
-- `internal-access-leak`: an individual `Operation` marked `@access(Access.internal)` is now correctly skipped, even when its containing `Interface` is public. Previously only the container's resolved access was checked, so an internal operation inside a public interface was incorrectly flagged for referencing internal types.
+- Generated clients using a merge-patch body compile: the `MergePatch<T>` helper is written to `Models/MergePatch.g.cs` whenever a merge-patch body uses it (once per namespace that needs it), and a user model named `MergePatch` is reported as `output-name-collision` instead of replacing the helper. Merge patches are recognized by the compiler's metadata, not by name, so a model called `AuditMergePatchUpdate` keeps its `@clientName` and is filtered by visibility, and a value set on a patch is written with the client's serializer settings.
+- A path parameter whose wire name differs from its C# name (`@path("widget-id") widgetId`) no longer makes `RestService.For` throw, and neither does a brace left in `route-prefix`, which is now percent-encoded.
+- A body or property declared as a subtype or grouping model of a `@discriminator` hierarchy is sent with its discriminator. Refit hands a body to the serializer as an `object`, which System.Text.Json writes without one.
+- A `bytes` body or response with `@encode(base64)` travels as base64 text, and a 200 with an empty `bytes` body is an empty array rather than `null`.
+- A `bytes` body is no longer sent as base64 JSON, and a `bytes` response no longer throws `ApiException`.
+- A JSON string body is sent quoted, and a JSON string response is returned without its quotes.
+- Query and path values use lower-case booleans, enum wire values, ISO 8601 dates and durations, base64 bytes, and the invariant culture.
+- A parameter named after a C# keyword (`params`, `event`, `class`) or `await` is escaped (`@params`), and a `Content-Type` header parameter is no longer exposed.
+- Every documentation comment is XML-escaped, every wire name written as a C# string literal is escaped (every C# line break included), and option values written into the `.csproj` are XML-escaped.
+- Every required reference-type property gets an initializer (`default!`, `[]` or `new()`), so generated models no longer raise `CS8618`.
+- Generated code no longer suppresses the missing-documentation warning `CS1591`: every generated public type and member carries XML documentation, and the examples build with warnings as errors.
+- A model or enum named after a .NET or Refit type the generated code uses (`Task`, `Uri`, `CancellationToken`, ...) no longer breaks the build; that type is written in full in that client.
+- Generic records declare every template parameter of their TypeSpec declaration, and template parameters, models and enums whose names C# warns about or rejects are escaped.
+- Name collisions (properties, JSON names, methods, parameters, types, files that differ only in case, version namespaces) are reported instead of emitted as uncompilable C#, and models, enums, interfaces and the aggregate client reserve their files across services, so one never silently overwrites another.
+- Models and enums are collected by qualified name and operations are grouped by their declaring interface or namespace, so two declarations with the same name in different namespaces are no longer merged.
+- Subtypes of a `@discriminator` model reached only through a property are generated, so `[JsonDerivedType]` never names a missing type.
+- A NuGet version keeps an API version's suffix only when it is valid SemVer 2.
+- `dotnet format` runs on each project in the output directory and is skipped when there is none; a failure with an empty stderr reports the exit code.
+- Generated files always use LF line endings.
+- `internal-access-leak`: the message no longer repeats the word "type", a parameter leak points at the parameter, and the advice names the interface or model to change. An operation marked `@access(Access.internal)` is still reported, because C# interface methods cannot carry an access modifier.
 
 ### Changed
 
-- Bumped development dependencies to the TypeSpec 1.15.0 wave: `@typespec/compiler` and `@typespec/http` to `^1.15.0`, `@typespec/versioning` to `^0.85.0`. The `peerDependencies` floor is now raised to `@typespec/compiler ^1.15.0` and `@typespec/http ^1.15.0` / `@typespec/versioning ^0.85.0` were added as peers, matching the convention used by this package's sibling emitters — a deliberate departure from the previous intentionally-conservative floor (see the 1.14.0 entry below), since consumers of this package's decorators and emitter already require the newer compiler/http/versioning APIs at runtime. `@typespec/rest` was dropped entirely rather than bumped — see below.
-- Declared `@eslint/js` as a direct `devDependency`. `eslint.config.js` has always imported it, but it was only resolvable because npm hoists it out of `eslint`'s own dependency tree — which would break the day `eslint` restructures its dependencies or the package is installed under a stricter node_modules layout.
-- Verified the TypeSpec 1.15.0 change to `using` resolution (a `using X;` before a file-level `namespace` now resolves `X` from the global namespace instead of the file namespace) has no effect here: `lib/main.tsp`'s `using TypeSpec.Reflection;` and the `example/simple-api` fixture's `using Http;` both already target genuine top-level globals. The full test suite and an `example/simple-api` rebuild both produce unchanged output under 1.15.0.
+- Bumped development dependencies to the TypeSpec 1.15.0 wave: `@typespec/compiler` and `@typespec/http` to `^1.15.0`, `@typespec/versioning` to `>=0.85.0 <1.0.0`, and raised the `peerDependencies` floor to match.
+- Declared `@eslint/js` as a direct `devDependency`.
+- Raised `handlebars` to `^4.7.10`, which fixes the JavaScript injection advisories (GHSA-xw65-4hp5-5hc7, GHSA-8r5x-fm3f-whwj, GHSA-p8wg-vrv2-v86f) in 4.7.9.
+- The CI workflow runs with a read-only token, builds explicitly before testing, and compiles every example and runs the end-to-end tests and the compile matrix.
 
 ### Removed
 
-- Dropped the `@typespec/rest` development dependency. It is not imported by `src/`, `test/`, `lib/`, or `scripts/`, and nothing in the dependency tree pulls it in. The only fixtures that use it — `example/versioned-api` and `example/simple-api` — declare and install it in their own `package.json`, so they are unaffected; both examples still compile.
-
+- Dropped the `@typespec/rest` development dependency, which nothing imported.
 ## [1.0.0-beta.12] - 2026-07-20
 
 ### Added

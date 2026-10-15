@@ -87,21 +87,136 @@ describe("client", () => {
     ok(content.includes("IPets pets"), "Expected pets constructor param");
     ok(content.includes("IStores stores"), "Expected stores constructor param");
     ok(
-      content.includes("Pets = pets;"),
-      "Expected Pets assignment in constructor",
+      content.includes(
+        "this.Pets = pets ?? throw new ArgumentNullException(nameof(pets));",
+      ),
+      "Expected a null-checked Pets assignment in the constructor",
     );
     ok(
-      content.includes("Stores = stores;"),
-      "Expected Stores assignment in constructor",
+      content.includes(
+        "this.Stores = stores ?? throw new ArgumentNullException(nameof(stores));",
+      ),
+      "Expected a null-checked Stores assignment in the constructor",
     );
     ok(
-      content.includes("AddTransient<TestApiClient>()"),
-      "Expected aggregate client registered as transient",
+      content.includes(
+        "services.AddTransient(serviceProvider => new TestApiClient(serviceProvider.GetRequiredService<IPets>(), serviceProvider.GetRequiredService<IStores>()));",
+      ),
+      "Expected the aggregate client registered as transient, built from the registered interfaces",
     );
-    ok(content.includes("AddSingleClient<IPets>"), "Expected IPets registered");
     ok(
-      content.includes("AddSingleClient<IStores>"),
+      content.includes(
+        "AddEndpoint<IPets>(services, configureHttpClient, configureBuilder);",
+      ),
+      "Expected IPets registered",
+    );
+    ok(
+      content.includes(
+        "AddEndpoint<IStores>(services, configureHttpClient, configureBuilder);",
+      ),
       "Expected IStores registered",
+    );
+  });
+
+  it("registers each interface as a Refit client with the runtime's settings and message handler", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/pets")
+      interface Pets {
+        @get list(): string[];
+      }
+    `);
+
+    const content = results["TestApiClientExtensions.g.cs"];
+    ok(content, "Expected TestApiClientExtensions.g.cs");
+    ok(
+      content.includes(".AddRefitClient<T>(ClientRuntime.CreateSettings())"),
+      "Expected the interface registered with the runtime's Refit settings",
+    );
+    ok(
+      content.includes(".ConfigureHttpClient(configureHttpClient)"),
+      "Expected the caller's HttpClient configuration applied",
+    );
+    ok(
+      content.includes(
+        ".AddHttpMessageHandler(() => ClientRuntime.CreateHandler());",
+      ),
+      "Expected the runtime's wire handler added to every interface",
+    );
+    ok(
+      content.includes("configureBuilder?.Invoke(builder);"),
+      "Expected the optional builder callback applied",
+    );
+    ok(
+      content.includes(
+        "if (services is null) throw new ArgumentNullException(nameof(services));",
+      ) &&
+        content.includes(
+          "if (configureHttpClient is null) throw new ArgumentNullException(nameof(configureHttpClient));",
+        ),
+      "Expected the registration method to null-check its arguments",
+    );
+    ok(
+      !content.includes("Flurl"),
+      "Did not expect any Flurl type in a Refit client",
+    );
+  });
+
+  it("emits factories that create the client without dependency injection", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/pets")
+      interface Pets {
+        @get list(): string[];
+      }
+
+      @route("/stores")
+      interface Stores {
+        @get list(): string[];
+      }
+    `);
+
+    const content = results["TestApiClientExtensions.g.cs"];
+    ok(content, "Expected TestApiClientExtensions.g.cs");
+    ok(
+      content.includes(
+        "public static RefitSettings CreateRefitSettings() => ClientRuntime.CreateSettings();",
+      ),
+      "Expected a factory for the Refit settings",
+    );
+    ok(
+      content.includes(
+        "public static DelegatingHandler CreateHttpMessageHandler(HttpMessageHandler? innerHandler = null) =>",
+      ) && content.includes("ClientRuntime.CreateHandler(innerHandler);"),
+      "Expected a factory for the message handler",
+    );
+    ok(
+      content.includes(
+        "public static TestApiClient Create(Uri baseAddress, HttpMessageHandler? innerHandler = null)",
+      ),
+      "Expected a Create factory that takes a base address",
+    );
+    ok(
+      content.includes(
+        "new HttpClient(ClientRuntime.CreateHandler(innerHandler ?? new HttpClientHandler()))",
+      ),
+      "Expected Create to put the wire handler in front of the inner handler",
+    );
+    ok(
+      content.includes(
+        "return new TestApiClient(RestService.For<IPets>(httpClient, settings), RestService.For<IStores>(httpClient, settings));",
+      ),
+      "Expected Create to build every interface with the shared HttpClient and settings",
     );
   });
 });

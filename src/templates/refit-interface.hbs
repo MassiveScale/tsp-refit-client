@@ -1,6 +1,6 @@
 {{!--
   refit-interface.hbs — rendered once per TypeSpec interface as a Refit
-  `public interface`.
+  `public interface` that declares every operation as a method.
 
   Override via tspconfig.yaml:
     options:
@@ -8,25 +8,31 @@
         templates:
           refit-interface: "./templates/refit-interface.hbs"
 
-  ── Template variables ──────────────────────────────────────────────────────
+  Template variables:
 
   {{interfaceName}} — C# interface name, e.g. "IWidgets"
+
+  {{access}}        — C# access modifier: "public" or "internal"
+
+  {{doc}}           — optional XML <summary> text (pre-escaped; may be falsy).
 
   {{methodsBlock}}  — pre-rendered string containing all method declarations,
                       each indented with 4 spaces and separated by blank lines.
                       Each method block contains:
-                        - Optional doc comment: /// <summary>...</summary>
-                        - Refit attribute:      [Get("/path")]
-                        - Method signature:     Task<T> MethodAsync(params);
+                        - Doc comment:        /// <summary>...</summary>
+                        - Refit attribute:    [Get("/path")]
+                        - Optional:           [Headers("Content-Type: ...")] and
+                                              runtime attributes ([ClientRuntime.EmptyStatus(204)])
+                        - Method signature:   Task<T> MethodAsync(params);
 
-  ── Built-in helpers ────────────────────────────────────────────────────────
+  Built-in helpers:
 
-  {{indent <text>}}  — prefixes every non-empty line of <text> with 4 spaces
-  {{eq a b}}         — strict equality
+  {{docLines <doc> <prefix>}}  — joins the lines of a doc with the given prefix
 
 --}}
 /// <summary>
 {{#if doc}}/// {{docLines doc "/// "}}
+{{else}}/// The operations of the <c>{{interfaceName}}</c> endpoint group.
 {{/if}}/// </summary>
 {{access}} interface {{interfaceName}}
 {

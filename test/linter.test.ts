@@ -42,7 +42,7 @@ describe("internal-access-leak", () => {
       .toEmitDiagnostics({
         code: "@massivescale/tsp-refit-client/internal-access-leak",
         message:
-          '"read" is public but its parameter type "Secret" is marked @access(Access.internal); the generated C# will fail to compile (CS0053: inconsistent accessibility). Mark "Secret" @access(Access.public), or mark "read" @access(Access.internal) as well.',
+          '"read" is public but its parameter type "Secret" is marked @access(Access.internal); the generated C# will fail to compile (CS0053: inconsistent accessibility). Mark "Secret" @access(Access.public), or mark the interface that declares "read" @access(Access.internal) as well.',
       });
   });
 
@@ -68,7 +68,7 @@ describe("internal-access-leak", () => {
       .toEmitDiagnostics({
         code: "@massivescale/tsp-refit-client/internal-access-leak",
         message:
-          '"read" is public but its return type "Secret" is marked @access(Access.internal); the generated C# will fail to compile (CS0053: inconsistent accessibility). Mark "Secret" @access(Access.public), or mark "read" @access(Access.internal) as well.',
+          '"read" is public but its return type "Secret" is marked @access(Access.internal); the generated C# will fail to compile (CS0053: inconsistent accessibility). Mark "Secret" @access(Access.public), or mark the interface that declares "read" @access(Access.internal) as well.',
       });
   });
 
@@ -96,7 +96,31 @@ describe("internal-access-leak", () => {
       });
   });
 
-  it("flags a public interface operation whose union-wrapped return type is @access(Access.internal)", async () => {
+  it("flags a public interface operation whose nullable return type is @access(Access.internal)", async () => {
+    await tester
+      .expect(
+        `
+        import "@massivescale/tsp-refit-client";
+        using MassiveScale.TspRefitClient;
+
+        namespace TestApi;
+
+        @access(Access.internal)
+        model Secret {
+          value: string;
+        }
+
+        interface Widgets {
+          read(): Secret | null;
+        }
+      `,
+      )
+      .toEmitDiagnostics({
+        code: "@massivescale/tsp-refit-client/internal-access-leak",
+      });
+  });
+
+  it("does not flag a multi-variant union, which is emitted as JsonElement and names no model", async () => {
     await tester
       .expect(
         `
@@ -119,9 +143,165 @@ describe("internal-access-leak", () => {
         }
       `,
       )
+      .toEmitDiagnostics([]);
+  });
+
+  it("flags a public operation returning an instance of an internal template", async () => {
+    await tester
+      .expect(
+        `
+        import "@massivescale/tsp-refit-client";
+        using MassiveScale.TspRefitClient;
+
+        namespace TestApi;
+
+        @access(Access.internal)
+        model Page<T> {
+          items: T[];
+        }
+
+        interface Widgets {
+          list(): Page<string>;
+        }
+      `,
+      )
       .toEmitDiagnostics({
         code: "@massivescale/tsp-refit-client/internal-access-leak",
+        message: /"Page"/,
       });
+  });
+
+  it("flags a public model whose property is an instance of an internal template", async () => {
+    await tester
+      .expect(
+        `
+        import "@massivescale/tsp-refit-client";
+        using MassiveScale.TspRefitClient;
+
+        namespace TestApi;
+
+        @access(Access.internal)
+        model Page<T> {
+          items: T[];
+        }
+
+        model Catalog {
+          page: Page<int32>;
+        }
+      `,
+      )
+      .toEmitDiagnostics({
+        code: "@massivescale/tsp-refit-client/internal-access-leak",
+        message: /"Page"/,
+      });
+  });
+
+  it("flags an internal success type when the return union also names an @error model", async () => {
+    await tester
+      .expect(
+        `
+        import "@typespec/http";
+        import "@massivescale/tsp-refit-client";
+        using Http;
+        using MassiveScale.TspRefitClient;
+
+        namespace TestApi;
+
+        @access(Access.internal)
+        model Secret {
+          value: string;
+        }
+
+        @error
+        model Problem {
+          code: int32;
+        }
+
+        interface Secrets {
+          @get read(): Secret | Problem;
+        }
+      `,
+      )
+      .toEmitDiagnostics({
+        code: "@massivescale/tsp-refit-client/internal-access-leak",
+        message: /"Secret"/,
+      });
+  });
+
+  it("does not flag success bodies of different shapes, which are returned as JsonElement", async () => {
+    await tester
+      .expect(
+        `
+        import "@typespec/http";
+        import "@massivescale/tsp-refit-client";
+        using Http;
+        using MassiveScale.TspRefitClient;
+
+        namespace TestApi;
+
+        @access(Access.internal)
+        model Secret {
+          value: string;
+        }
+
+        model Open {
+          id: string;
+        }
+
+        interface Secrets {
+          @get read(): { @statusCode _: 200; @body b: Secret } | { @statusCode _: 201; @body b: Open };
+        }
+      `,
+      )
+      .toEmitDiagnostics([]);
+  });
+
+  it("flags a public operation whose merge-patch body patches an internal model", async () => {
+    await tester
+      .expect(
+        `
+        import "@typespec/http";
+        import "@massivescale/tsp-refit-client";
+        using Http;
+        using MassiveScale.TspRefitClient;
+
+        namespace TestApi;
+
+        @access(Access.internal)
+        model Secret {
+          value: string;
+        }
+
+        interface Secrets {
+          @patch update(@body body: MergePatchUpdate<Secret>): void;
+        }
+      `,
+      )
+      .toEmitDiagnostics({
+        code: "@massivescale/tsp-refit-client/internal-access-leak",
+        message: /"Secret"/,
+      });
+  });
+
+  it("does not flag an instance of a public template", async () => {
+    await tester
+      .expect(
+        `
+        import "@massivescale/tsp-refit-client";
+        using MassiveScale.TspRefitClient;
+
+        namespace TestApi;
+
+        model Page<T> {
+          items: T[];
+        }
+
+        interface Widgets {
+          list(): Page<string>;
+        }
+      `,
+      )
+      .toEmitDiagnostics([]);
   });
 
   it("flags a public model whose property type is @access(Access.internal)", async () => {
@@ -146,7 +326,7 @@ describe("internal-access-leak", () => {
       .toEmitDiagnostics({
         code: "@massivescale/tsp-refit-client/internal-access-leak",
         message:
-          '"secret" is public but its property type "Secret" is marked @access(Access.internal); the generated C# will fail to compile (CS0053: inconsistent accessibility). Mark "Secret" @access(Access.public), or mark "secret" @access(Access.internal) as well.',
+          '"secret" is public but its property type "Secret" is marked @access(Access.internal); the generated C# will fail to compile (CS0053: inconsistent accessibility). Mark "Secret" @access(Access.public), or mark the model that declares "secret" @access(Access.internal) as well.',
       });
   });
 
@@ -281,7 +461,7 @@ describe("internal-access-leak", () => {
       });
   });
 
-  it("is valid when an individual operation is @access(Access.internal) inside an otherwise public interface, even if it references an internal type via a parameter", async () => {
+  it("still flags an operation marked @access(Access.internal), because C# interface methods are always public", async () => {
     await tester
       .expect(
         `
@@ -303,6 +483,10 @@ describe("internal-access-leak", () => {
         }
       `,
       )
-      .toBeValid();
+      .toEmitDiagnostics({
+        code: "@massivescale/tsp-refit-client/internal-access-leak",
+        message:
+          '"write" is public but its parameter type "Secret" is marked @access(Access.internal); the generated C# will fail to compile (CS0053: inconsistent accessibility). Mark "Secret" @access(Access.public), or mark the interface that declares "write" @access(Access.internal) as well.',
+      });
   });
 });

@@ -6,8 +6,10 @@ on:
   push:
     branches: [main]
 
+# Least privilege: these jobs only read the repository. A job that needs more
+# declares it itself, as the coverage upload does.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
@@ -33,8 +35,59 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Tests run the compiled files in dist, so the build is explicit rather than left
+      # to the prepare script that npm ci happens to run.
       - name: Build & Test
-        run: npm test
+        run: npm run build && npm test
+
+  e2e:
+    name: End-to-end (generated C#)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # Every example is generated and its C# compiled with warnings as errors, so a
+      # nullable, accessibility, or XML-documentation defect in the output fails here.
+      - name: Generate and compile the examples with warnings as errors
+        run: |
+          for example in simple-api kitchen-sink all-versions; do
+            (cd "example/$example" && npm install && npx tsp compile . && dotnet build tsp-output -warnaserror)
+          done
+          (cd example/versioned-api && npm install && npx tsp compile . --config tspconfig.yaml && dotnet build tsp-output/defaults -warnaserror)
+
+      # The supported floor is .NET 8, so the generated C# is exercised on both runtimes.
+      - name: Run the end-to-end tests on .NET 8
+        run: dotnet run --project e2e/Refit.Tests -f net8.0
+
+      - name: Run the end-to-end tests on .NET 10
+        run: dotnet run --project e2e/Refit.Tests -f net10.0
+
+      # Every type shape, position, encoding, media type, and awkward name TypeSpec
+      # accepts: the emitter must report each one or generate C# that builds with
+      # warnings as errors and round-trips through the client serializer.
+      - name: Run the compile matrix
+        run: npm run matrix
 
   coverage:
     name: Coverage
@@ -83,8 +136,12 @@ jobs:
         with:
           name: coverage-report-typescript
 
+      # Non-fatal while GitHub code quality is not enabled for this repository
+      # (the upload is rejected with HTTP 403). The Coverage job above still
+      # runs the tests under c8. Remove this once code quality is enabled.
       - uses: actions/upload-code-coverage@v1
         with:
           file: cobertura-coverage.xml
           language: TypeScript
           label: code-coverage-agent
+          fail-on-error: false
