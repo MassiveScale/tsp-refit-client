@@ -23,8 +23,9 @@ enum Access {
  *   (the `I` prefix is still added automatically).
  * - On an `op`: replaces the base method name (the `Async` suffix is still
  *   appended and the first letter is capitalised).
- * - On a `model property`: replaces the emitted C# property name. The original
- *   TypeSpec property name is still used as the JSON wire name.
+ * - On a `model property` or an operation parameter: replaces the emitted C#
+ *   property or parameter name. The original TypeSpec name is still used as the
+ *   wire name.
  *
  * @param name The C# identifier to use in the emitted output.
  */

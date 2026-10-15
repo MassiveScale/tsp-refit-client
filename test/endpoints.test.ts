@@ -35,6 +35,10 @@ describe("endpoints", () => {
       "Expected Task<List<string>> return type",
     );
     ok(content.includes("ListAsync("), "Expected ListAsync method");
+    ok(
+      !Object.keys(results).some((k) => k.endsWith("ItemsEndpoint.g.cs")),
+      "Did not expect an implementation class, since Refit implements the interface",
+    );
   });
 
   it("emits POST, PATCH, DELETE operations", async () => {
@@ -379,7 +383,7 @@ describe("endpoints", () => {
       .find((l) => l.includes("CreateAsync("));
     ok(methodLine, "Expected CreateAsync method");
     const skipIdx = methodLine!.indexOf("storeId");
-    const bodyIdx = methodLine!.indexOf("[Body]");
+    const bodyIdx = methodLine!.indexOf("[Body(");
     const dryRunIdx = methodLine!.indexOf("dryRun");
     ok(
       skipIdx < bodyIdx,
@@ -513,7 +517,7 @@ describe("endpoints", () => {
     );
     ok(
       content.includes(
-        `CreateAsync([Body] Item body, ${expected}, CancellationToken`,
+        `CreateAsync([Body(BodySerializationMethod.Serialized, true)] Item body, ${expected}, CancellationToken`,
       ),
       "Expected additionalQueryParameters on CreateAsync, which has no query params of its own",
     );
@@ -545,12 +549,20 @@ describe("endpoints", () => {
     ok(ifaceFile, "Expected IWidgets.g.cs");
     const content = results[ifaceFile];
     ok(
-      content.includes("[Body] MergePatch<Widget> body"),
-      "Expected the body parameter to be typed as MergePatch<Widget>, not the synthesized WidgetMergePatchUpdate name",
+      content.includes(
+        "[Body(BodySerializationMethod.Serialized, true)] IMergePatch<Widget> body",
+      ),
+      "Expected the body parameter to be typed as IMergePatch<Widget>, which MergePatch<Widget> implements, not the synthesized WidgetMergePatchUpdate name",
     );
     ok(
       !content.includes("WidgetMergePatchUpdate"),
       "Did not expect the synthesized model's literal name to leak into the interface",
+    );
+    ok(
+      content.includes(
+        '[Headers("Content-Type: application/merge-patch+json")]',
+      ),
+      "Expected the merge-patch media type declared on the method",
     );
 
     const phantomFile = Object.keys(results).find((k) =>

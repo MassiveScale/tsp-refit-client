@@ -346,7 +346,9 @@ describe("models", () => {
     );
     ok(ifaceFile);
     ok(
-      results[ifaceFile].includes("[Body] Item body"),
+      results[ifaceFile].includes(
+        "[Body(BodySerializationMethod.Serialized, true)] Item body",
+      ),
       "Interface should use Item directly",
     );
   });
