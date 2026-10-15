@@ -5,6 +5,18 @@
 import { Version } from "@typespec/versioning";
 import { Renderer, CsprojView } from "./renderer.js";
 import { EmitterOptions } from "./lib.js";
+import { escapeXml } from "./utils.js";
+
+/**
+ * XML-escapes an optional value for an MSBuild element, so `A & B` or text
+ * containing `<` cannot malform the project file or inject extra elements.
+ *
+ * @param value - The raw value, or `undefined` when the element is omitted.
+ * @returns The escaped value, or `undefined`.
+ */
+function xml(value: string | undefined): string | undefined {
+  return value === undefined ? undefined : escapeXml(value);
+}
 
 /**
  * Renders the generated `.csproj` file for the client package.
@@ -32,33 +44,56 @@ export function buildCsproj(
   options: EmitterOptions,
   renderer: Renderer,
 ): string {
+  // Every value is written into XML element text, and the template does not
+  // escape, so all of them are escaped here.
   const view: CsprojView = {
-    rootNamespace: rootNs,
-    netVersion,
+    rootNamespace: escapeXml(rootNs),
+    netVersion: escapeXml(netVersion),
     isMultiTarget,
-    nugetDescription,
-    nugetTitle,
-    nugetPackageId: options["nuget-package-id"],
-    nugetVersion,
-    nugetAuthors: options["nuget-authors"],
-    nugetTags: options["nuget-tags"],
+    nugetDescription: escapeXml(nugetDescription),
+    nugetTitle: xml(nugetTitle),
+    nugetPackageId: xml(options["nuget-package-id"]),
+    nugetVersion: escapeXml(nugetVersion),
+    nugetAuthors: xml(options["nuget-authors"]),
+    nugetTags: xml(options["nuget-tags"]),
   };
   return renderer.renderCsproj(view);
 }
 
+/** A SemVer 2 numeric identifier: `0`, or digits without a leading zero. */
+const SEMVER_NUMBER = "(?:0|[1-9]\\d*)";
+
+/** A SemVer 2 pre-release identifier: a numeric identifier, or alphanumerics and hyphens with at least one non-digit. */
+const SEMVER_PRERELEASE_ID = `(?:${SEMVER_NUMBER}|\\d*[A-Za-z-][0-9A-Za-z-]*)`;
+
+/** A SemVer 2 build-metadata identifier: any non-empty run of alphanumerics and hyphens. */
+const SEMVER_BUILD_ID = "[0-9A-Za-z-]+";
+
+/**
+ * A SemVer 2 version: `major.minor[.patch]`, then an optional pre-release and
+ * build metadata, each captured so a version suffix can be checked and kept.
+ */
+const SEMVER_PATTERN = new RegExp(
+  `^(${SEMVER_NUMBER})\\.(${SEMVER_NUMBER})(?:\\.(${SEMVER_NUMBER}))?` +
+    `((?:-${SEMVER_PRERELEASE_ID}(?:\\.${SEMVER_PRERELEASE_ID})*)?` +
+    `(?:\\+${SEMVER_BUILD_ID}(?:\\.${SEMVER_BUILD_ID})*)?)$`,
+);
+
 /**
  * Attempts to parse a semver string from a TypeSpec version value.
  * Accepts an optional leading `v`/`V`, two-part (`1.2`) or three-part (`1.2.3`)
- * numeric versions, and preserves any pre-release / build-metadata suffix.
- * Returns `undefined` when the string cannot be interpreted as semver.
+ * numeric versions, and preserves a pre-release / build-metadata suffix only when
+ * it is valid SemVer 2 (dot-separated ASCII identifiers), which is what NuGet
+ * accepts. Returns `undefined` when the string cannot be interpreted as semver, so
+ * a version such as `1.2-preview build` falls back to CalVer instead of producing
+ * an invalid package version.
  */
 export function tryParseSemver(value: string): string | undefined {
   const stripped = value.replace(/^[vV]/, "");
-  const match = stripped.match(/^(\d+)\.(\d+)(?:\.(\d+))?([-+].+)?$/);
+  const match = SEMVER_PATTERN.exec(stripped);
   if (!match) return undefined;
   const patch = match[3] ?? "0";
-  const rest = match[4] ?? "";
-  return `${match[1]}.${match[2]}.${patch}${rest}`;
+  return `${match[1]}.${match[2]}.${patch}${match[4]}`;
 }
 
 /** Formats a date as a CalVer string (`YYYY.MM.DD`). */

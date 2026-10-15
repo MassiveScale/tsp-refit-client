@@ -1,9 +1,11 @@
 {{!--
   extensions.hbs — generates two top-level declarations in one file:
-    1. A concrete `{clientClassName}` class that exposes each Refit interface
-       as a named property (e.g. `client.Pets.ListAsync(ct)`).
-    2. A static `{className}` extension class that registers all Refit interfaces
-       and the aggregate client with ASP.NET Core's DI container.
+    1. A concrete `{clientClassName}` class that exposes each Refit interface as
+       a named property (e.g. `client.Pets.ListAsync(ct)`), plus factories for
+       the Refit settings and message handler the interfaces need, and a
+       `Create` factory for use without dependency injection.
+    2. A static `{className}` extension class that registers every Refit
+       interface and the aggregate client with ASP.NET Core's DI container.
 
   Override via tspconfig.yaml:
     options:
@@ -11,7 +13,7 @@
         templates:
           extensions: "./templates/extensions.hbs"
 
-  ── Template variables ──────────────────────────────────────────────────────
+  Template variables:
 
   {{clientClassName}} — name of the aggregate client class, e.g. "ApiClient"
 
@@ -22,25 +24,30 @@
   {{interfaces}}      — array of interface entry objects. Each has:
     .name             —   C# interface name, e.g. "IPets"
     .propertyName     —   property name on the aggregate client, e.g. "Pets"
-    .paramName        —   constructor parameter name, e.g. "pets"
+    .paramName        —   constructor parameter name as written in C#, e.g. "pets" or "@params"
+    .docParamName     —   the same name in XML documentation, never escaped, e.g. "params"
+    .access           —   "public" or "internal"; the property's access modifier
 
-  ── Usage example ────────────────────────────────────────────────────────────
+  {{constructorAccess}} — "public", or "internal" when any endpoint is internal,
+                        because a public constructor cannot take an internal type
 
-  builder.Services.AddApiClient(c =>
-  {
-      c.BaseAddress = new Uri("https://api.example.com");
-  });
+  Usage example:
+
+  builder.Services.AddApiClient(c => c.BaseAddress = new Uri("https://api.example.com"));
 
   // Inject and call:
   public class MyService(ApiClient api)
   {
-      public Task DoSomethingAsync(CancellationToken ct) =>
-          api.Pets.ListAsync(ct);
+      public Task<Pet> GetAsync(string id, CancellationToken ct) =>
+          api.Pets.ReadAsync(id, cancellationToken: ct);
   }
 
-  ── Built-in helpers ────────────────────────────────────────────────────────
+  // Or, without dependency injection:
+  var api = ApiClient.Create(new Uri("https://api.example.com"));
 
-  {{indent <text>}}  — prefixes every non-empty line of <text> with 4 spaces
+  Built-in helpers:
+
+  {{declaredName <name>}}  — the name, verbatim-escaped when it is all lower-case
 
 --}}
 /// <summary>
@@ -48,20 +55,65 @@
 /// </summary>
 /// <remarks>
 /// Inject this class directly and call methods through its named endpoint properties,
-/// e.g. <c>client.Pets.ListAsync(ct)</c>.
+/// e.g. <c>client.Pets.ListAsync(ct)</c>. The endpoint interfaces only send their requests in the
+/// format the API expects through the settings from <see cref="CreateRefitSettings"/> and the handler
+/// from <see cref="CreateHttpMessageHandler"/>, which the registration method and <see cref="Create"/> use.
 /// </remarks>
-public class {{clientClassName}}
+public class {{declaredName clientClassName}}
 {
 {{#each interfaces}}    /// <summary>Gets the <see cref="{{name}}"/> client.</summary>
-    public {{name}} {{propertyName}} { get; }
-{{/each}}
-    /// <summary>
+    {{access}} {{name}} {{propertyName}} { get; }
+
+{{/each}}    /// <summary>
     /// Initializes a new instance of <see cref="{{clientClassName}}"/>.
     /// </summary>
-    public {{clientClassName}}({{#each interfaces}}{{name}} {{paramName}}{{#unless @last}}, {{/unless}}{{/each}})
+{{#each interfaces}}    /// <param name="{{docParamName}}">The <see cref="{{name}}"/> client.</param>
+{{/each}}    {{constructorAccess}} {{clientClassName}}({{#each interfaces}}{{name}} {{paramName}}{{#unless @last}}, {{/unless}}{{/each}})
     {
-{{#each interfaces}}        {{propertyName}} = {{paramName}};
+{{#each interfaces}}        this.{{propertyName}} = {{paramName}} ?? throw new ArgumentNullException(nameof({{paramName}}));
 {{/each}}    }
+
+    /// <summary>
+    /// Creates the Refit settings every endpoint interface needs: the JSON serializer this API's
+    /// wire formats require, and the formatter that writes query and path values. Pass them to
+    /// <c>RestService.For</c> when creating an interface yourself.
+    /// </summary>
+    /// <returns>New settings.</returns>
+    public static RefitSettings CreateRefitSettings() => ClientRuntime.CreateSettings();
+
+    /// <summary>
+    /// Creates the message handler every endpoint interface needs: it sends header and cookie
+    /// parameters in their wire format and finishes request and response bodies. Put it in front of
+    /// the handler that sends requests when creating an <see cref="HttpClient"/> yourself.
+    /// </summary>
+    /// <param name="innerHandler">
+    /// The handler that sends requests. Leave it out when the handler is added to an
+    /// <see cref="IHttpClientBuilder"/>, which sets it.
+    /// </param>
+    /// <returns>A new handler.</returns>
+    public static DelegatingHandler CreateHttpMessageHandler(HttpMessageHandler? innerHandler = null) =>
+        ClientRuntime.CreateHandler(innerHandler);
+
+    /// <summary>
+    /// Creates a client that talks to <paramref name="baseAddress"/>, for use without dependency injection.
+    /// </summary>
+    /// <param name="baseAddress">The API base address, e.g. <c>https://api.example.com</c>.</param>
+    /// <param name="innerHandler">
+    /// Optional. The handler that sends requests, such as one with its own delegating handlers; a new
+    /// <see cref="HttpClientHandler"/> when omitted.
+    /// </param>
+    /// <returns>The client.</returns>
+    public static {{clientClassName}} Create(Uri baseAddress, HttpMessageHandler? innerHandler = null)
+    {
+        if (baseAddress is null) throw new ArgumentNullException(nameof(baseAddress));
+
+        var httpClient = new HttpClient(ClientRuntime.CreateHandler(innerHandler ?? new HttpClientHandler()))
+        {
+            BaseAddress = baseAddress,
+        };
+        var settings = ClientRuntime.CreateSettings();
+        return new {{clientClassName}}({{#each interfaces}}RestService.For<{{name}}>(httpClient, settings){{#unless @last}}, {{/unless}}{{/each}});
+    }
 }
 
 /// <summary>
@@ -70,32 +122,46 @@ public class {{clientClassName}}
 public static class {{className}}
 {
     /// <summary>
-    /// Registers all Refit interfaces and the <see cref="{{clientClassName}}"/> aggregate client with the DI container.
+    /// Registers every Refit interface and the <see cref="{{clientClassName}}"/> aggregate client with the DI container.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configureHttpClient">Configures the underlying <see cref="HttpClient"/> for every interface (e.g. set <c>BaseAddress</c>).</param>
     /// <param name="configureBuilder">
     /// Optional. Receives the <see cref="IHttpClientBuilder"/> for each interface and returns it, allowing
-    /// additional configuration such as adding delegating handlers or Polly resilience policies.
+    /// additional configuration such as adding delegating handlers or resilience policies.
     /// </param>
+    /// <returns><paramref name="services"/>, so calls can be chained.</returns>
     public static IServiceCollection {{methodName}}(
         this IServiceCollection services,
         Action<HttpClient> configureHttpClient,
         Func<IHttpClientBuilder, IHttpClientBuilder>? configureBuilder = null)
     {
-{{#each interfaces}}        AddSingleClient<{{name}}>(services, configureHttpClient, configureBuilder);
-{{/each}}        services.AddTransient<{{clientClassName}}>();
+        if (services is null) throw new ArgumentNullException(nameof(services));
+        if (configureHttpClient is null) throw new ArgumentNullException(nameof(configureHttpClient));
+
+{{#each interfaces}}        AddEndpoint<{{name}}>(services, configureHttpClient, configureBuilder);
+{{/each}}        services.AddTransient(serviceProvider => new {{clientClassName}}({{#each interfaces}}serviceProvider.GetRequiredService<{{name}}>(){{#unless @last}}, {{/unless}}{{/each}}));
         return services;
     }
 
-    private static void AddSingleClient<T>(
+    /// <summary>
+    /// Registers one Refit interface with the settings and message handler it needs.
+    /// </summary>
+    /// <typeparam name="T">The Refit interface.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configureHttpClient">Configures the interface's <see cref="HttpClient"/>.</param>
+    /// <param name="configureBuilder">Optional further configuration of the interface's <see cref="IHttpClientBuilder"/>.</param>
+    private static void AddEndpoint<T>(
         IServiceCollection services,
         Action<HttpClient> configureHttpClient,
         Func<IHttpClientBuilder, IHttpClientBuilder>? configureBuilder) where T : class
     {
+        // The wire handler is added first, so it is the outermost handler: anything the caller
+        // adds sees the headers and body it has written.
         var builder = services
-            .AddRefitClient<T>()
-            .ConfigureHttpClient(configureHttpClient);
+            .AddRefitClient<T>(ClientRuntime.CreateSettings())
+            .ConfigureHttpClient(configureHttpClient)
+            .AddHttpMessageHandler(() => ClientRuntime.CreateHandler());
         configureBuilder?.Invoke(builder);
     }
 }

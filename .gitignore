@@ -23,3 +23,5 @@ obj/
 # Compile matrix: the spec is generated on every run
 matrix/main.tsp
 matrix/package-lock.json
+
+.port-ref/
