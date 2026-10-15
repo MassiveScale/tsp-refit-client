@@ -86,6 +86,10 @@ internal static class ClientRuntime
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
         {
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            TypeInfoResolver = new DefaultJsonTypeInfoResolver
+            {
+                Modifiers = { InheritPolymorphism },
+            },
         };
 
         // TypeSpec durations are ISO 8601 (`PT1H`); System.Text.Json writes a TimeSpan as `01:00:00`.
@@ -93,6 +97,43 @@ internal static class ClientRuntime
         return options;
     }
 
+    /// <summary>
+    /// Makes every type below a <c>@discriminator</c> base polymorphic too, with the subtypes the base
+    /// lists that derive from it. System.Text.Json writes the discriminator only through a type that
+    /// declares <see cref="JsonPolymorphicAttribute"/>, but Refit hands a request body over as an
+    /// <see cref="object"/>, which is serialized as its runtime type, and a property can be declared as
+    /// a subtype or a grouping model. Without this, a <c>Dog</c> body or a <c>Dog</c> property would
+    /// be sent with no discriminator at all.
+    /// </summary>
+    /// <param name="typeInfo">The contract System.Text.Json built for a type.</param>
+    private static void InheritPolymorphism(JsonTypeInfo typeInfo)
+    {
+        if (typeInfo.Kind != JsonTypeInfoKind.Object || typeInfo.PolymorphismOptions is not null) return;
+
+        for (var root = typeInfo.Type.BaseType; root is not null; root = root.BaseType)
+        {
+            var polymorphic = root.GetCustomAttribute<JsonPolymorphicAttribute>(inherit: false);
+            if (polymorphic is null) continue;
+
+            var polymorphism = new JsonPolymorphismOptions
+            {
+                TypeDiscriminatorPropertyName = polymorphic.TypeDiscriminatorPropertyName ?? "$type",
+            };
+            foreach (var derived in root.GetCustomAttributes<JsonDerivedTypeAttribute>(inherit: false))
+            {
+                if (!typeInfo.Type.IsAssignableFrom(derived.DerivedType)) continue;
+                polymorphism.DerivedTypes.Add(derived.TypeDiscriminator switch
+                {
+                    string text => new JsonDerivedType(derived.DerivedType, text),
+                    int number => new JsonDerivedType(derived.DerivedType, number),
+                    _ => new JsonDerivedType(derived.DerivedType),
+                });
+            }
+
+            if (polymorphism.DerivedTypes.Count > 0) typeInfo.PolymorphismOptions = polymorphism;
+            return;
+        }
+    }
     /// <summary>
     /// Converts a value to the text sent in a query string, path segment, header, or cookie: enums
     /// by wire name, lower-case booleans, ISO 8601 dates and durations, base64 bytes, numbers in the
@@ -283,6 +324,11 @@ internal static class ClientRuntime
         /// <summary><c>base64url</c>: URL-safe base64 without padding.</summary>
         Base64Url,
 
+        /// <summary>
+        /// Base64 text for a whole <c>bytes</c> body or response, which would otherwise travel raw.
+        /// </summary>
+        Base64,
+
         /// <summary><c>ArrayEncoding.pipeDelimited</c>: <c>a|b</c>.</summary>
         PipeDelimited,
 
@@ -359,6 +405,7 @@ internal static class ClientRuntime
             WireEncoding.Milliseconds or WireEncoding.WholeMilliseconds =>
                 TimeSpan.FromMilliseconds(double.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture)),
             WireEncoding.Base64Url => FromBase64Url(text),
+            WireEncoding.Base64 => Convert.FromBase64String(text),
             _ => throw new NotSupportedException($"{encoding} is not a plain-text format."),
         };
     }
@@ -582,6 +629,17 @@ internal static class ClientRuntime
 
         /// <summary>Gets the wire format of a plain-text body with an <c>@encode</c>.</summary>
         public WireEncoding? Format { get; }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// The length is never reported, so Refit hands even an empty body to the serializer instead of
+        /// returning null for it.
+        /// </remarks>
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
     }
 
     /// <summary>
@@ -685,15 +743,18 @@ internal static class ClientRuntime
 
             var responseFormat = method.ReturnParameter.GetCustomAttribute<EncodedAttribute>()?.Format;
             var mediaType = response.Content.Headers.ContentType?.MediaType;
-            var returnsString = method.ReturnType == typeof(Task<string>);
-            if (responseFormat is null && !(returnsString && mediaType is not null && IsJsonMediaType(mediaType)))
+            var jsonString = method.ReturnType == typeof(Task<string>) && mediaType is not null && IsJsonMediaType(mediaType);
+            // Refit returns null for content of length zero without asking the serializer, so an empty
+            // byte array would arrive as null, which is what a bodyless status means. Its length is hidden.
+            var emptyBytes = method.ReturnType == typeof(Task<byte[]>) && response.Content.Headers.ContentLength == 0;
+            if (responseFormat is null && !jsonString && !emptyBytes)
             {
                 return response;
             }
 
             var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
             HttpContent content;
-            if (returnsString && mediaType is not null && IsJsonMediaType(mediaType))
+            if (jsonString)
             {
                 // Refit returns a string response as the raw content, so a JSON string would keep its quotes.
                 var text = bytes.Length == 0 ? string.Empty : JsonSerializer.Deserialize<string>(bytes) ?? string.Empty;
@@ -705,6 +766,7 @@ internal static class ClientRuntime
                 content = new ReadContent(bytes, responseFormat);
                 foreach (var header in response.Content.Headers)
                 {
+                    if (header.Key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)) continue;
                     content.Headers.TryAddWithoutValidation(header.Key, header.Value);
                 }
             }

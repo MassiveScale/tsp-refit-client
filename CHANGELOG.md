@@ -37,6 +37,7 @@ These change what generated C# compiles against or sends. Regenerate, then fix c
 - Every `@encode` TypeSpec defines, for model properties, query, path, header and cookie parameters, and plain-text bodies and responses: `unixTimestamp` and `rfc7231` dates, `seconds` and `milliseconds` durations, `base64url` bytes, `@encode("string")` on numbers, and `ArrayEncoding` delimited lists. A date-time header defaults to RFC 7231, as TypeSpec specifies.
 - `text/plain` scalar bodies and responses are sent as their wire text and parsed back, raw `bytes` bodies and responses are sent and read raw, text is encoded with the charset its media type declares, and a response declared as both JSON and text is read by the `Content-Type` that arrives.
 - A query array honours `explode`: `tags=a,b` by default, `tags=a&tags=b` with `explode: true`.
+- A path parameter with `allowReserved` keeps its `/` unencoded, through Refit's round-trip placeholder (`{**path}`).
 - A JSON body declared with another JSON media type (`application/vnd.acme+json`) is sent with it.
 - A method whose operation can also succeed without a body returns a nullable type, which is `null` for that status; an optional body that is left out sends no body.
 - Success responses with different bodies are returned as a `JsonElement`.
@@ -53,7 +54,9 @@ These change what generated C# compiles against or sends. Regenerate, then fix c
 ### Fixed
 
 - Generated clients using a merge-patch body compile: the `MergePatch<T>` helper is written to `Models/MergePatch.g.cs` whenever a merge-patch body uses it (once per namespace that needs it), and a user model named `MergePatch` is reported as `output-name-collision` instead of replacing the helper. Merge patches are recognized by the compiler's metadata, not by name, so a model called `AuditMergePatchUpdate` keeps its `@clientName` and is filtered by visibility, and a value set on a patch is written with the client's serializer settings.
-- A path parameter whose wire name differs from its C# name (`@path("widget-id") widgetId`) no longer makes `RestService.For` throw.
+- A path parameter whose wire name differs from its C# name (`@path("widget-id") widgetId`) no longer makes `RestService.For` throw, and neither does a brace left in `route-prefix`, which is now percent-encoded.
+- A body or property declared as a subtype or grouping model of a `@discriminator` hierarchy is sent with its discriminator. Refit hands a body to the serializer as an `object`, which System.Text.Json writes without one.
+- A `bytes` body or response with `@encode(base64)` travels as base64 text, and a 200 with an empty `bytes` body is an empty array rather than `null`.
 - A `bytes` body is no longer sent as base64 JSON, and a `bytes` response no longer throws `ApiException`.
 - A JSON string body is sent quoted, and a JSON string response is returned without its quotes.
 - Query and path values use lower-case booleans, enum wire values, ISO 8601 dates and durations, base64 bytes, and the invariant culture.
@@ -75,6 +78,7 @@ These change what generated C# compiles against or sends. Regenerate, then fix c
 
 - Bumped development dependencies to the TypeSpec 1.15.0 wave: `@typespec/compiler` and `@typespec/http` to `^1.15.0`, `@typespec/versioning` to `>=0.85.0 <1.0.0`, and raised the `peerDependencies` floor to match.
 - Declared `@eslint/js` as a direct `devDependency`.
+- Raised `handlebars` to `^4.7.10`, which fixes the JavaScript injection advisories (GHSA-xw65-4hp5-5hc7, GHSA-8r5x-fm3f-whwj, GHSA-p8wg-vrv2-v86f) in 4.7.9.
 - The CI workflow runs with a read-only token, builds explicitly before testing, and compiles every example and runs the end-to-end tests and the compile matrix.
 
 ### Removed

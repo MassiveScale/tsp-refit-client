@@ -124,7 +124,7 @@ describe("responses declared with several media types", () => {
     const runtime = fileContent(results, "ClientRuntime.g.cs");
     ok(
       runtime.includes(
-        "var returnsString = method.ReturnType == typeof(Task<string>);",
+        "var jsonString = method.ReturnType == typeof(Task<string>) && mediaType is not null && IsJsonMediaType(mediaType);",
       ),
       "A JSON string response is unwrapped to its text",
     );

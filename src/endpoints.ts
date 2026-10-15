@@ -445,8 +445,10 @@ function hasHiddenProperties(
 
 /**
  * Resolves the configured route prefix for a version: substitutes the
- * `{version}` token with the version value (or removes it when unversioned) and
- * collapses duplicate/trailing slashes.
+ * `{version}` token with the version value (or removes it when unversioned),
+ * collapses duplicate/trailing slashes, and percent-encodes any brace left over.
+ * Refit would read a brace as a placeholder that no parameter fills, and throw
+ * when the client is created; a URI path needs it encoded anyway.
  *
  * @param prefix - The raw `route-prefix` option value.
  * @param version - The API version being emitted, or `undefined` when unversioned.
@@ -462,20 +464,32 @@ function resolveRoutePrefix(
   } else {
     resolved = resolved.replace(/\{version\}/g, "");
   }
-  return resolved.replace(/\/+/g, "/").replace(/\/$/, "");
+  return resolved
+    .replace(/\/+/g, "/")
+    .replace(/\/$/, "")
+    .replace(/\{/g, "%7B")
+    .replace(/\}/g, "%7D");
 }
 
 /**
  * Turns a route template such as `/widgets/{id}/analyze` into the route of a Refit
- * verb attribute: RFC 6570 operators and the explode marker are dropped
- * (`{+path}` is `{path}`), since Refit binds plain `{name}` placeholders and
- * percent-encodes every value, and the result is escaped for a C# string literal.
+ * verb attribute, escaped for a C# string literal. Refit binds plain `{name}`
+ * placeholders and percent-encodes every value, so RFC 6570 operators and the
+ * explode marker are dropped (`{+id}` is `{id}`). A path parameter that allows
+ * reserved characters keeps its `/` unencoded through Refit's round-trip
+ * placeholder (`{**path}`).
  *
  * @param path - The route template, with `{name}` placeholders.
+ * @param roundTrip - The wire names of the path parameters written with `{**name}`.
  * @returns The route, starting with `/`, ready to place between quotes.
  */
-export function buildRoute(path: string): string {
-  const route = path.replace(/\{[+#./;?&]?([^}*]+)\*?\}/g, "{$1}");
+export function buildRoute(
+  path: string,
+  roundTrip: ReadonlySet<string> = new Set(),
+): string {
+  const route = path.replace(/\{[+#./;?&]?([^}*]+)\*?\}/g, (_, name: string) =>
+    roundTrip.has(name) ? `{**${name}}` : `{${name}}`,
+  );
   return escapeCsString(route.startsWith("/") ? route : `/${route}`);
 }
 
@@ -717,6 +731,7 @@ function buildMethodView(
   const requiredParams: string[] = [];
   const optionalParams: string[] = [];
   const headers: string[] = [];
+  const roundTrip = new Set<string>();
 
   // Parameter names must be unique, and must not collide with the parameters every
   // method adds.
@@ -829,6 +844,11 @@ function buildMethodView(
       }
       if (wire && !isDelimited(wire)) attributes.push(encodedAttribute(wire));
     } else if (param.type === "path") {
+      // Refit writes a round-trip placeholder's value with its `/` intact, which is
+      // what `allowReserved` asks for; it only accepts one for a string.
+      if (param.allowReserved && csType.replace(/\?$/, "") === "string") {
+        roundTrip.add(param.name);
+      }
       if (param.name !== unescaped) {
         attributes.push(
           `${fx("AliasAs", "attribute")}("${escapeCsString(param.name)}")`,
@@ -945,7 +965,7 @@ function buildMethodView(
     const attributes = [
       `${fx("Body", "attribute")}(${fx("BodySerializationMethod")}.Serialized, true)`,
     ];
-    const wire = bodyEncoding(program, bodyInfo, kind).wire;
+    const wire = transportFormat(program, bodyInfo, kind);
     if (wire) attributes.push(encodedAttribute(wire));
     // `@body body?: Widget` may be left out, in which case no body is sent at all.
     const optionalBody = bodyInfo.property?.optional === true;
@@ -972,7 +992,7 @@ function buildMethodView(
     doc,
     methodName,
     httpMethod: capitalize(op.verb),
-    route: buildRoute(rawPath),
+    route: buildRoute(rawPath, roundTrip),
     headers,
     attributes: (response?.emptyStatuses ?? []).map(
       (args) => `ClientRuntime.EmptyStatus(${args})`,
@@ -1146,6 +1166,33 @@ function bodyEncoding(
   }
 }
 
+/**
+ * The wire format the runtime must be told about for a body or response: the
+ * body's `@encode` when the runtime implements it, and `Base64` for bytes encoded
+ * as base64 text. Base64 is the default format of bytes inside JSON, so it is no
+ * `@encode` of its own, but a bytes body declared with it travels as text under the
+ * media type TypeSpec gives bytes (`application/octet-stream`), which the runtime
+ * would otherwise send and read raw.
+ *
+ * @param program - The compiler program.
+ * @param body - The request or response body.
+ * @param kind - How the body travels.
+ * @returns The runtime format, or `undefined` when it needs none.
+ */
+function transportFormat(
+  program: Program,
+  body: HttpPayloadBody,
+  kind: PayloadKind,
+): WireEncoding | undefined {
+  const wire = bodyEncoding(program, body, kind).wire;
+  if (wire) return wire;
+  return kind === "text" &&
+    isEncodedAsText(program, body) &&
+    body.bodyKind === "single" &&
+    getEncode(program, body.property!)?.encoding === "base64"
+    ? "Base64"
+    : undefined;
+}
 /** How a method reads its result from the operation's success responses. */
 interface ResolvedResponse {
   /**
@@ -1231,7 +1278,7 @@ function resolveResponse(
   return {
     type: optional(resultType),
     kind,
-    encoding: bodyEncoding(program, body, kind).wire,
+    encoding: transportFormat(program, body, kind),
     emptyStatuses,
   };
 }

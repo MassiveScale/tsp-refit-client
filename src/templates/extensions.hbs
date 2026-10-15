@@ -112,7 +112,7 @@ public class {{declaredName clientClassName}}
             BaseAddress = baseAddress,
         };
         var settings = ClientRuntime.CreateSettings();
-        return new {{clientClassName}}({{#each interfaces}}RestService.For<{{name}}>(httpClient, settings){{#unless @last}}, {{/unless}}{{/each}});
+        return new {{clientClassName}}({{#each interfaces}}{{fx "RestService"}}.For<{{name}}>(httpClient, settings){{#unless @last}}, {{/unless}}{{/each}});
     }
 }
 

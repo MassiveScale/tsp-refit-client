@@ -34,6 +34,11 @@ export type WireEncoding =
   | "WholeMilliseconds"
   /** `base64url`: URL-safe base64 without padding. */
   | "Base64Url"
+  /**
+   * Base64 text for a whole `bytes` body or response, which would otherwise
+   * travel raw. Never the format of a property or parameter, where base64 is the default.
+   */
+  | "Base64"
   /** `ArrayEncoding.pipeDelimited`: `a|b`. */
   | "PipeDelimited"
   /** `ArrayEncoding.spaceDelimited`: `a b`. */

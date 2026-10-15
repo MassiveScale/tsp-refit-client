@@ -12,8 +12,8 @@
 
   Two types are emitted: the covariant marker `IMergePatch<out T>` and the
   builder `MergePatch<T>`. Endpoint methods accept `IMergePatch<Widget>`, so a
-  `MergePatch<MyWidget>` (a patch against a custom model that derives from
-  `Widget`) can be sent to an operation declared against `Widget`.
+  `MergePatch<Widget>` is passed as it is, and so is a patch against a type
+  that derives from `Widget`.
 
   Override via tspconfig.yaml:
     options:
@@ -31,14 +31,14 @@
       .Set(w => w.Name, "new name")   // send a new value
       .Clear(w => w.Description);     // send an explicit JSON null
 
-  await client.Widgets.UpdateAsync(id, patch, ct);
+  await client.Widgets.UpdateAsync(id, patch, cancellationToken: ct);
 
 --}}
 
 /// <summary>
 /// Marks a merge-patch payload targeting <typeparamref name="T"/>. It is covariant, so a patch
-/// against a custom model that derives from <typeparamref name="T"/> is accepted wherever a
-/// patch against <typeparamref name="T"/> is expected.
+/// against a type that derives from <typeparamref name="T"/> is accepted wherever a patch against
+/// <typeparamref name="T"/> is expected.
 /// </summary>
 /// <typeparam name="T">The model type the patch targets.</typeparam>
 public interface IMergePatch<out T>

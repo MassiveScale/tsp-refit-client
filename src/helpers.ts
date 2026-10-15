@@ -52,6 +52,7 @@ const HELPER_USINGS: Record<HelperName, string[]> = {
     "System.Text",
     "System.Text.Json",
     "System.Text.Json.Serialization",
+    "System.Text.Json.Serialization.Metadata",
     "System.Threading",
     "System.Threading.Tasks",
     "System.Xml",
