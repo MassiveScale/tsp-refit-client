@@ -5,3 +5,12 @@ src/templates/*.hbs
 # Markdown tables follow the house style (aligned pipes, dashes across the full width),
 # which Prettier would rewrite.
 *.md
+
+# Lockfiles of the examples and the compile matrix are local installs, not checked in.
+**/package-lock.json
+!/package-lock.json
+
+# Generated output.
+tsp-output/
+dist-*/
+.port-ref/
