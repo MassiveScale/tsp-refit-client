@@ -49,6 +49,7 @@ describe("aggregate client constructor parameters", () => {
           { interfaceName: "Iitems", access: "public" },
         ],
         createRenderer(),
+        "TestApi",
       ),
     );
     ok(parameters.includes("IItems items"), parameters);

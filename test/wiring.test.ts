@@ -1,6 +1,6 @@
 import { ok, doesNotMatch } from "node:assert";
 import { describe, it } from "node:test";
-import { emit, fileContent } from "./host.js";
+import { emit, emitWithDiagnostics, fileContent } from "./host.js";
 
 const TWO_INTERFACES = `
   import "@typespec/http";
@@ -41,17 +41,101 @@ describe("aggregate client", () => {
 
     ok(
       content.includes(
-        "public static TestApiClient Create(Uri baseAddress, HttpMessageHandler? innerHandler = null)",
+        "public static Standalone Create(Uri baseAddress, HttpMessageHandler? innerHandler = null)",
       ),
     );
     ok(
       content.includes(
-        "new HttpClient(ClientRuntime.CreateHandler(innerHandler ?? new HttpClientHandler()))",
+        "global::TestApi.Client.ClientRuntime.CreateHandler(innerHandler ?? new HttpClientHandler()))",
       ),
     );
     ok(
       content.includes(
-        "return new TestApiClient(RestService.For<IPets>(httpClient, settings), RestService.For<IStores>(httpClient, settings));",
+        ": base(global::Refit.RestService.For<IPets>(httpClient, settings), global::Refit.RestService.For<IStores>(httpClient, settings))",
+      ),
+    );
+  });
+
+  it("returns a client from Create that owns and disposes the HttpClient it built", async () => {
+    const content = fileContent(
+      await emit(TWO_INTERFACES),
+      "TestApiClientExtensions.g.cs",
+    );
+
+    ok(
+      content.includes(
+        "public sealed class Standalone : TestApiClient, IDisposable",
+      ),
+    );
+    ok(content.includes("public void Dispose() => _httpClient.Dispose();"));
+    ok(
+      content.includes(
+        "internal Standalone(HttpClient httpClient, RefitSettings settings)",
+      ),
+      "Only Create makes one, so the client never owns a caller's HttpClient",
+    );
+    ok(
+      content.includes("public class TestApiClient\n"),
+      "The registered client stays non-disposable, so the container never tracks it",
+    );
+  });
+
+  it("writes the runtime and RestService in full, so an endpoint property cannot hide them", async () => {
+    const outputs = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/runtime")
+      interface ClientRuntime { @get read(): string; }
+
+      @route("/rest")
+      interface RestService { @get read(): string; }
+    `);
+    const content = fileContent(outputs, "TestApiClientExtensions.g.cs");
+
+    ok(content.includes("public IClientRuntime ClientRuntime { get; }"));
+    ok(content.includes("public IRestService RestService { get; }"));
+    doesNotMatch(
+      content
+        .split("public static class")[0]
+        .split("\n")
+        .filter((line) => !line.trim().startsWith("///"))
+        .join("\n"),
+      /[^.:]\b(ClientRuntime|RestService)\.(CreateSettings|CreateHandler|For)\b/,
+      "Inside the client, the bare names are its properties",
+    );
+  });
+
+  it("reports an interface or client-name that takes the name of the nested Standalone class", async () => {
+    const [, interfaceDiagnostics] = await emitWithDiagnostics(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/s")
+      interface Standalone { @get read(): string; }
+    `);
+    ok(
+      interfaceDiagnostics.some(
+        (d) =>
+          d.code.endsWith("name-collision") &&
+          d.message.includes("nested Standalone class"),
+      ),
+    );
+
+    const [, optionDiagnostics] = await emitWithDiagnostics(TWO_INTERFACES, {
+      "client-name": "Standalone",
+    });
+    ok(
+      optionDiagnostics.some(
+        (d) =>
+          d.code.endsWith("invalid-option") &&
+          d.message.includes("nested Standalone class"),
       ),
     );
   });
@@ -64,7 +148,7 @@ describe("aggregate client", () => {
 
     ok(
       content.includes(
-        "public static RefitSettings CreateRefitSettings() => ClientRuntime.CreateSettings();",
+        "public static RefitSettings CreateRefitSettings() => global::TestApi.Client.ClientRuntime.CreateSettings();",
       ),
     );
     ok(

@@ -138,7 +138,7 @@ public static class Harness
     public static (KitchenSinkClient Client, StubHandler Handler) KitchenSink(Wiring wiring = Wiring.Create)
     {
         var handler = new StubHandler();
-        return (Build(wiring, handler, KitchenSinkClient.Create, KitchenSinkClientExtensions.AddKitchenSinkClient), handler);
+        return (Build<KitchenSinkClient>(wiring, handler, KitchenSinkClient.Create, KitchenSinkClientExtensions.AddKitchenSinkClient), handler);
     }
 
     /// <summary>Builds the simple-api client.</summary>
@@ -147,7 +147,7 @@ public static class Harness
     public static (ExampleClient Client, StubHandler Handler) Simple(Wiring wiring = Wiring.Create)
     {
         var handler = new StubHandler();
-        return (Build(wiring, handler, ExampleClient.Create, ExampleClientExtensions.AddExampleClient), handler);
+        return (Build<ExampleClient>(wiring, handler, ExampleClient.Create, ExampleClientExtensions.AddExampleClient), handler);
     }
 
     /// <summary>Builds the all-versions client for version 1.0.</summary>
@@ -156,7 +156,7 @@ public static class Harness
     public static (V1.AllVersionsClient Client, StubHandler Handler) AllVersionsV1(Wiring wiring = Wiring.Create)
     {
         var handler = new StubHandler();
-        return (Build(wiring, handler, V1.AllVersionsClient.Create, V1.AllVersionsClientExtensions.AddAllVersionsClient), handler);
+        return (Build<V1.AllVersionsClient>(wiring, handler, V1.AllVersionsClient.Create, V1.AllVersionsClientExtensions.AddAllVersionsClient), handler);
     }
 
     /// <summary>Builds the all-versions client for version 2.0.</summary>
@@ -165,14 +165,14 @@ public static class Harness
     public static (V2.AllVersionsClient Client, StubHandler Handler) AllVersionsV2(Wiring wiring = Wiring.Create)
     {
         var handler = new StubHandler();
-        return (Build(wiring, handler, V2.AllVersionsClient.Create, V2.AllVersionsClientExtensions.AddAllVersionsClient), handler);
+        return (Build<V2.AllVersionsClient>(wiring, handler, V2.AllVersionsClient.Create, V2.AllVersionsClientExtensions.AddAllVersionsClient), handler);
     }
 
     /// <summary>
     /// Builds a generated client either through its static <c>Create</c> or through its registration
     /// method and a service provider, sending every request to <paramref name="handler"/>.
     /// </summary>
-    /// <typeparam name="TClient">The aggregate client.</typeparam>
+    /// <typeparam name="TClient">The aggregate client, as the container registers it (`Create` returns its `Standalone` subclass).</typeparam>
     /// <param name="wiring">How the client is built.</param>
     /// <param name="handler">The handler that stands in for the network.</param>
     /// <param name="create">The generated <c>Create(baseAddress, innerHandler)</c>.</param>

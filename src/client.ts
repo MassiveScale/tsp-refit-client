@@ -30,6 +30,8 @@ export interface EndpointName {
  *   `I` stripped. An internal interface becomes an internal property, and any internal
  *   interface makes the aggregate client's constructor internal.
  * @param renderer - Handlebars renderer used to produce the file contents.
+ * @param runtimeNamespace - The C# namespace of the `ClientRuntime` helper, which
+ *   the aggregate client names in full so an endpoint property cannot hide it.
  * @param additionalUsings - Extra `using` directives from the `additional-usings`
  *   option, which apply to every emitted file.
  * @returns The full C# source of the generated extensions file.
@@ -39,6 +41,7 @@ export function buildExtensions(
   csNs: string,
   endpoints: EndpointName[],
   renderer: Renderer,
+  runtimeNamespace: string,
   additionalUsings: Iterable<string> = [],
 ): string {
   const className = `${serviceName}Extensions`;
@@ -75,6 +78,7 @@ export function buildExtensions(
     constructorAccess: interfaces.some((i) => i.access !== "public")
       ? "internal"
       : "public",
+    runtimeNamespace,
     interfaces,
   };
   const body = renderer.renderExtensions(view);

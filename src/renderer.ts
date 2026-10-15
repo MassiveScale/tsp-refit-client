@@ -226,6 +226,8 @@ export interface ExtensionsView {
   clientClassName: string;
   /** C# access modifier of the aggregate client's constructor; `"internal"` when any endpoint is internal. */
   constructorAccess: string;
+  /** C# namespace of the `ClientRuntime` helper, written in full by the aggregate client. */
+  runtimeNamespace: string;
   /** Ordered list of Refit interface entries. */
   interfaces: InterfaceEntry[];
 }
