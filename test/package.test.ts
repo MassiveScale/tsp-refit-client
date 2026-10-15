@@ -10,6 +10,27 @@ const manifest = JSON.parse(
   readFileSync(resolve(root, "package.json"), "utf-8"),
 );
 
+/** One package's entry in the output of `npm pack --json`. */
+interface PackResult {
+  /** The files the tarball contains. */
+  files: { path: string }[];
+}
+
+/**
+ * Reads the packed file paths from `npm pack --json`. npm 11 prints an array of
+ * results; npm 12 prints an object keyed by package name. The publish workflow
+ * runs the latest npm, so both are read.
+ *
+ * @param output - The parsed JSON output.
+ * @returns The paths of the files in the tarball.
+ */
+function packedFiles(
+  output: PackResult[] | Record<string, PackResult>,
+): string[] {
+  const [result] = Array.isArray(output) ? output : Object.values(output);
+  return result.files.map((f) => f.path);
+}
+
 describe("the published package", () => {
   const pack = spawnSync(
     "npm",
@@ -21,11 +42,7 @@ describe("the published package", () => {
     },
   );
   const files: string[] =
-    pack.status === 0
-      ? (JSON.parse(pack.stdout)[0].files as { path: string }[]).map(
-          (f) => f.path,
-        )
-      : [];
+    pack.status === 0 ? packedFiles(JSON.parse(pack.stdout)) : [];
 
   it("can be packed", () => {
     strictEqual(pack.status, 0, pack.stderr);
