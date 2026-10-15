@@ -104,7 +104,7 @@ Different source names can also become the same C# name, which C# rejects, so co
 - Properties: `foo` and `Foo`, a property that shares its record's name (`model Owner { owner: string }`, `CS0542`), or the name of a member every record has (`EqualityContract`, `Equals`, `ToString`, ...). In a `@discriminator` hierarchy, a derived property whose C# name is that of an inherited one is reported too, since C# would hide the inherited member; one that redeclares an inherited property to narrow its type is left to the inherited member.
 - JSON names: two properties whose JSON names differ only in case, or that clash with an inherited property or the discriminator, which System.Text.Json rejects at runtime.
 - Operations: `read` and `Read` both become `ReadAsync`. Parameters: `foo` and `Foo` both become `foo`, and a parameter cannot be named `body` (when there is a request body), `cancellationToken` or `additionalQueryParameters`, which every method already takes.
-- Types: two models or enums with the same name in different child namespaces (they are flattened into one C# namespace), two interfaces with the same name, and a model named like a generated type (`IItems`, the aggregate client, its `...Extensions` class, an enum's `...JsonConverter`, `ClientRuntime`, `MergePatch`, `IMergePatch`). An interface cannot be named like the aggregate client or one of its members (`Create`, `CreateRefitSettings`, `CreateHttpMessageHandler`).
+- Types: two models or enums with the same name in different child namespaces (they are flattened into one C# namespace), two interfaces with the same name, and a model named like a generated type (`IItems`, the aggregate client, its `...Extensions` class, an enum's `...JsonConverter`, `ClientRuntime`, `MergePatch`, `IMergePatch`). An interface cannot be named like the aggregate client or one of its members (`Create`, `CreateRefitSettings`, `CreateHttpMessageHandler`, `Standalone`), and `client-name` cannot be `Standalone`.
 - File names that differ only in case (`Widget` and `widget`), which are the same file on Windows and macOS.
 - With `all-versions`, two version values that sanitize to the same namespace segment (`1.0` and `1_0`).
 
@@ -196,14 +196,16 @@ builder.Services.AddApiClient(
 );
 ```
 
-Without dependency injection, create the client directly:
+Without dependency injection, create the client directly. A client from `Create` owns the `HttpClient` it builds, so dispose it when you are done (create one and reuse it, as with any `HttpClient`):
 
 ```csharp
-var api = ApiClient.Create(new Uri("https://api.example.com"));
+using var api = ApiClient.Create(new Uri("https://api.example.com"));
 
-// or with your own handler pipeline underneath
-var api = ApiClient.Create(new Uri("https://api.example.com"), myHandler);
+// or with your own handler pipeline underneath, which the client then owns too
+using var api = ApiClient.Create(new Uri("https://api.example.com"), myHandler);
 ```
+
+`Create` returns an `ApiClient.Standalone`, an `ApiClient` that is `IDisposable`. The `ApiClient` the container builds is not disposable: its handlers belong to `IHttpClientFactory`.
 
 > **Always create the interfaces through `Add{Client}` or `Create`.** The interfaces only send and read values in their wire format with the Refit settings from `ApiClient.CreateRefitSettings()` and the message handler from `ApiClient.CreateHttpMessageHandler()`. If you build an interface yourself with `RestService.For<IItems>(...)`, pass both: `RestService.For<IItems>(new HttpClient(ApiClient.CreateHttpMessageHandler(new HttpClientHandler())) { BaseAddress = ... }, ApiClient.CreateRefitSettings())`. With Refit's defaults, enums, durations, `@encode`, text and bytes bodies, headers and cookies would not travel as the API expects.
 

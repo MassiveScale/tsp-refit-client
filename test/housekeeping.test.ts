@@ -222,6 +222,7 @@ describe("aggregate client for an interface that is not prefixed with I", () => 
       "Acme",
       [{ interfaceName: "Pets", access: "public" }],
       createRenderer(),
+      "Acme",
     );
 
     ok(source.includes("public Pets Pets { get; }"));

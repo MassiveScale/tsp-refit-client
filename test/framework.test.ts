@@ -157,7 +157,14 @@ describe("models named after framework types", () => {
       @route("/w") interface Widgets { @get read(): Widget; }
     `);
 
-    ok(!Object.values(results).some((c) => c.includes("global::")));
+    // The aggregate client always names the runtime and RestService in full, since an
+    // endpoint property of the same name would hide them; nothing else needs to.
+    const deliberate = /global::(Refit\.RestService|[\w.]+\.ClientRuntime)\b/g;
+    ok(
+      !Object.values(results).some((c) =>
+        c.replace(deliberate, "").includes("global::"),
+      ),
+    );
   });
 
   it("qualify each framework type a model hides, everywhere it is used", async () => {

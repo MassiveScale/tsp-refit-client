@@ -519,6 +519,13 @@ function validateNames(
       value: clientName,
       reason: "is not a valid C# class name (it must not be a C# keyword)",
     });
+  } else if (clientName === "Standalone") {
+    // The client declares a nested class of that name, which C# rejects (CS0542).
+    problems.push({
+      option: "client-name",
+      value: clientName,
+      reason: "is the name of the client's nested Standalone class",
+    });
   }
   if (!isCsNamespace(rootNamespace)) {
     problems.push({
@@ -710,6 +717,7 @@ async function emitService(
           "CreateHttpMessageHandler",
           "the client's CreateHttpMessageHandler factory method",
         ],
+        ["Standalone", "the client's nested Standalone class"],
       ],
     );
 
@@ -902,6 +910,7 @@ async function emitService(
           endpointNs,
           endpointNames,
           renderer,
+          baseNs,
           additionalUsings,
         ),
       );

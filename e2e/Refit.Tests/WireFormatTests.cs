@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 using AwesomeAssertions;
 using MassiveScale.KitchenSink.Client;
@@ -284,6 +285,35 @@ public sealed class ClientConstructionTests
         handler.Last.Uri.ToString().Should().Be("https://api.test/root/api/derived/1");
     }
 
+    [TestMethod]
+    public void A_client_created_without_dependency_injection_releases_its_handlers_when_disposed()
+    {
+        var handler = new DisposalRecorder();
+        var client = KitchenSinkClient.Create(new Uri("https://api.test"), handler);
+
+        client.Should().BeAssignableTo<IDisposable>("the client owns the HttpClient Create built");
+        client.Dispose();
+
+        handler.Disposed.Should().BeTrue("disposing the client disposes its HttpClient and the handlers under it");
+    }
+
+    /// <summary>A handler that records whether it was disposed.</summary>
+    private sealed class DisposalRecorder : HttpMessageHandler
+    {
+        /// <summary>Gets whether the handler was disposed.</summary>
+        public bool Disposed { get; private set; }
+
+        /// <inheritdoc />
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent) { RequestMessage = request });
+
+        /// <inheritdoc />
+        protected override void Dispose(bool disposing)
+        {
+            Disposed = true;
+            base.Dispose(disposing);
+        }
+    }
     [TestMethod]
     public void Create_requires_a_base_address()
     {

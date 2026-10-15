@@ -492,12 +492,15 @@ export function buildCases() {
 
   // Each interface is a property of the aggregate client and a parameter of its
   // constructor, beside the client's own static members (`Create`,
-  // `CreateRefitSettings`, `CreateHttpMessageHandler`), so these are names
-  // that need care there.
+  // `CreateRefitSettings`, `CreateHttpMessageHandler`) and its nested `Standalone`
+  // class, so these are names that need care there. An interface named
+  // after a type the client's factories call (`ClientRuntime`, `RestService`) cannot sit
+  // beside the models named after them here, so test/wiring.test.ts covers those.
   for (const name of [
     "Create",
     "CreateRefitSettings",
     "CreateHttpMessageHandler",
+    "Standalone",
     "Params",
     "Class",
     "Event",

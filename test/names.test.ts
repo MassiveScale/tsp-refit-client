@@ -52,6 +52,35 @@ describe("names that come from the TypeSpec", () => {
     ok(!Object.keys(results).some((k) => k.includes("my model")));
   });
 
+  it("rejects a model named after one of C#'s undocumented keywords", async () => {
+    for (const keyword of [
+      "__arglist",
+      "__makeref",
+      "__reftype",
+      "__refvalue",
+    ]) {
+      const [results, diagnostics] = await emitWithDiagnostics(`${PREAMBLE}
+        model \`${keyword}\` { a: string; }
+
+        @route("/things") interface Things { @get read(): \`${keyword}\`; }
+      `);
+
+      strictEqual(invalidNames(diagnostics).length, 1, keyword);
+      ok(!Object.keys(results).some((k) => k.endsWith(`/${keyword}.g.cs`)));
+    }
+  });
+
+  it("escapes a parameter named after one of C#'s undocumented keywords", async () => {
+    const results = await emit(`${PREAMBLE}
+      @route("/things") interface Things {
+        @get read(@query __arglist?: string, @header __makeref?: string): string;
+      }
+    `);
+
+    const iface = fileContent(results, "IThings.g.cs");
+    ok(iface.includes("string? @__arglist = null"));
+    ok(iface.includes("string? @__makeref = null"));
+  });
   it("cannot be used to write outside the Models folder", async () => {
     const [results, diagnostics] = await emitWithDiagnostics(`${PREAMBLE}
       model \`../Evil\` { a: string; }

@@ -3,11 +3,16 @@
 // any other module can depend on it without creating a cycle.
 
 /**
- * C# reserved keywords. A parameter named after one of these needs a leading `@`
- * to be a legal identifier, and none of them can be used as a type or namespace
- * name at all.
+ * C# reserved keywords, including the undocumented `__arglist`, `__makeref`,
+ * `__reftype` and `__refvalue`. A parameter named after one of these needs a
+ * leading `@` to be a legal identifier, and none of them can be used as a type or
+ * namespace name at all.
  */
 const CS_KEYWORDS = new Set([
+  "__arglist",
+  "__makeref",
+  "__reftype",
+  "__refvalue",
   "abstract",
   "as",
   "base",

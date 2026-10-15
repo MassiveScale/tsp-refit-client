@@ -190,31 +190,34 @@ describe("client", () => {
     ok(content, "Expected TestApiClientExtensions.g.cs");
     ok(
       content.includes(
-        "public static RefitSettings CreateRefitSettings() => ClientRuntime.CreateSettings();",
+        "public static RefitSettings CreateRefitSettings() => global::TestApi.Client.ClientRuntime.CreateSettings();",
       ),
       "Expected a factory for the Refit settings",
     );
     ok(
       content.includes(
         "public static DelegatingHandler CreateHttpMessageHandler(HttpMessageHandler? innerHandler = null) =>",
-      ) && content.includes("ClientRuntime.CreateHandler(innerHandler);"),
+      ) &&
+        content.includes(
+          "global::TestApi.Client.ClientRuntime.CreateHandler(innerHandler);",
+        ),
       "Expected a factory for the message handler",
     );
     ok(
       content.includes(
-        "public static TestApiClient Create(Uri baseAddress, HttpMessageHandler? innerHandler = null)",
+        "public static Standalone Create(Uri baseAddress, HttpMessageHandler? innerHandler = null)",
       ),
       "Expected a Create factory that takes a base address",
     );
     ok(
       content.includes(
-        "new HttpClient(ClientRuntime.CreateHandler(innerHandler ?? new HttpClientHandler()))",
+        "global::TestApi.Client.ClientRuntime.CreateHandler(innerHandler ?? new HttpClientHandler()))",
       ),
       "Expected Create to put the wire handler in front of the inner handler",
     );
     ok(
       content.includes(
-        "return new TestApiClient(RestService.For<IPets>(httpClient, settings), RestService.For<IStores>(httpClient, settings));",
+        ": base(global::Refit.RestService.For<IPets>(httpClient, settings), global::Refit.RestService.For<IStores>(httpClient, settings))",
       ),
       "Expected Create to build every interface with the shared HttpClient and settings",
     );

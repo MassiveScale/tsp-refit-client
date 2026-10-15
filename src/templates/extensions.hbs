@@ -31,6 +31,8 @@
   {{constructorAccess}} — "public", or "internal" when any endpoint is internal,
                         because a public constructor cannot take an internal type
 
+  {{runtimeNamespace}}  — C# namespace of the ClientRuntime helper, e.g. "Acme.Api.Client"
+
   Usage example:
 
   builder.Services.AddApiClient(c => c.BaseAddress = new Uri("https://api.example.com"));
@@ -42,8 +44,8 @@
           api.Pets.ReadAsync(id, cancellationToken: ct);
   }
 
-  // Or, without dependency injection:
-  var api = ApiClient.Create(new Uri("https://api.example.com"));
+  // Or, without dependency injection (the client owns its HttpClient):
+  using var api = ApiClient.Create(new Uri("https://api.example.com"));
 
   Built-in helpers:
 
@@ -73,13 +75,16 @@ public class {{declaredName clientClassName}}
 {{#each interfaces}}        this.{{propertyName}} = {{paramName}} ?? throw new ArgumentNullException(nameof({{paramName}}));
 {{/each}}    }
 
+    // The runtime and Refit's RestService are written in full in this class: an endpoint
+    // property named ClientRuntime or RestService would otherwise be what the name refers to.
+
     /// <summary>
     /// Creates the Refit settings every endpoint interface needs: the JSON serializer this API's
     /// wire formats require, and the formatter that writes query and path values. Pass them to
     /// <c>RestService.For</c> when creating an interface yourself.
     /// </summary>
     /// <returns>New settings.</returns>
-    public static RefitSettings CreateRefitSettings() => ClientRuntime.CreateSettings();
+    public static RefitSettings CreateRefitSettings() => global::{{runtimeNamespace}}.ClientRuntime.CreateSettings();
 
     /// <summary>
     /// Creates the message handler every endpoint interface needs: it sends header and cookie
@@ -92,27 +97,59 @@ public class {{declaredName clientClassName}}
     /// </param>
     /// <returns>A new handler.</returns>
     public static DelegatingHandler CreateHttpMessageHandler(HttpMessageHandler? innerHandler = null) =>
-        ClientRuntime.CreateHandler(innerHandler);
+        global::{{runtimeNamespace}}.ClientRuntime.CreateHandler(innerHandler);
 
     /// <summary>
     /// Creates a client that talks to <paramref name="baseAddress"/>, for use without dependency injection.
     /// </summary>
+    /// <remarks>
+    /// The client owns the <see cref="HttpClient"/> it sends through, and with it
+    /// <paramref name="innerHandler"/>, so dispose it when you are done with it (<c>using var api = ...</c>).
+    /// Create one and reuse it rather than creating one per call, as with any <see cref="HttpClient"/>.
+    /// </remarks>
     /// <param name="baseAddress">The API base address, e.g. <c>https://api.example.com</c>.</param>
     /// <param name="innerHandler">
     /// Optional. The handler that sends requests, such as one with its own delegating handlers; a new
     /// <see cref="HttpClientHandler"/> when omitted.
     /// </param>
     /// <returns>The client.</returns>
-    public static {{clientClassName}} Create(Uri baseAddress, HttpMessageHandler? innerHandler = null)
+    public static Standalone Create(Uri baseAddress, HttpMessageHandler? innerHandler = null)
     {
         if (baseAddress is null) throw new ArgumentNullException(nameof(baseAddress));
 
-        var httpClient = new HttpClient(ClientRuntime.CreateHandler(innerHandler ?? new HttpClientHandler()))
+        var httpClient = new HttpClient(
+            global::{{runtimeNamespace}}.ClientRuntime.CreateHandler(innerHandler ?? new HttpClientHandler()))
         {
             BaseAddress = baseAddress,
         };
-        var settings = ClientRuntime.CreateSettings();
-        return new {{clientClassName}}({{#each interfaces}}{{fx "RestService"}}.For<{{name}}>(httpClient, settings){{#unless @last}}, {{/unless}}{{/each}});
+        return new Standalone(httpClient, global::{{runtimeNamespace}}.ClientRuntime.CreateSettings());
+    }
+
+    /// <summary>
+    /// A <see cref="{{clientClassName}}"/> made by <see cref="Create"/>, which owns the
+    /// <see cref="HttpClient"/> its endpoints send through and releases it when disposed. A client from
+    /// the container is not one of these; the container's <see cref="IHttpClientFactory"/> owns its
+    /// handlers.
+    /// </summary>
+    public sealed class Standalone : {{clientClassName}}, IDisposable
+    {
+        private readonly HttpClient _httpClient;
+
+        /// <summary>
+        /// Initializes a client whose endpoints all send through <paramref name="httpClient"/>.
+        /// </summary>
+        /// <param name="httpClient">The client to send through, which this instance now owns.</param>
+        /// <param name="settings">The Refit settings for every endpoint.</param>
+        internal Standalone(HttpClient httpClient, RefitSettings settings)
+            : base({{#each interfaces}}global::Refit.RestService.For<{{name}}>(httpClient, settings){{#unless @last}}, {{/unless}}{{/each}})
+        {
+            _httpClient = httpClient;
+        }
+
+        /// <summary>
+        /// Disposes the <see cref="HttpClient"/> this client sends through, and its handlers.
+        /// </summary>
+        public void Dispose() => _httpClient.Dispose();
     }
 }
 

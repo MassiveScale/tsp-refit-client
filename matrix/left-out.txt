@@ -166,6 +166,7 @@ reported cookieParameter20 invalid-name
 reported endpointNamedCreate name-collision
 reported endpointNamedCreateHttpMessageHandler name-collision
 reported endpointNamedCreateRefitSettings name-collision
+reported endpointNamedStandalone name-collision
 reported headerParameter12 name-collision
 reported headerParameter13 name-collision
 reported headerParameter18 invalid-name

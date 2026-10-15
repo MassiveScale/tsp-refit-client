@@ -33,7 +33,7 @@ These change what generated C# compiles against or sends. Regenerate, then fix c
 
 ### Added
 
-- `{Client}.Create(Uri baseAddress, HttpMessageHandler? innerHandler = null)`, `{Client}.CreateRefitSettings()` and `{Client}.CreateHttpMessageHandler(...)`, for use without dependency injection.
+- `{Client}.Create(Uri baseAddress, HttpMessageHandler? innerHandler = null)`, `{Client}.CreateRefitSettings()` and `{Client}.CreateHttpMessageHandler(...)`, for use without dependency injection. `Create` returns a `{Client}.Standalone`, which owns the `HttpClient` it builds and disposes it with its handlers; the client the container builds is not disposable, so the container never tracks it.
 - Every `@encode` TypeSpec defines, for model properties, query, path, header and cookie parameters, and plain-text bodies and responses: `unixTimestamp` and `rfc7231` dates, `seconds` and `milliseconds` durations, `base64url` bytes, `@encode("string")` on numbers, and `ArrayEncoding` delimited lists. A date-time header defaults to RFC 7231, as TypeSpec specifies.
 - `text/plain` scalar bodies and responses are sent as their wire text and parsed back, raw `bytes` bodies and responses are sent and read raw, text is encoded with the charset its media type declares, and a response declared as both JSON and text is read by the `Content-Type` that arrives.
 - A query array honours `explode`: `tags=a,b` by default, `tags=a&tags=b` with `explode: true`.
@@ -63,6 +63,8 @@ These change what generated C# compiles against or sends. Regenerate, then fix c
 - A parameter named after a C# keyword (`params`, `event`, `class`) or `await` is escaped (`@params`), and a `Content-Type` header parameter is no longer exposed.
 - Every documentation comment is XML-escaped, every wire name written as a C# string literal is escaped (every C# line break included), and option values written into the `.csproj` are XML-escaped.
 - Every required reference-type property gets an initializer (`default!`, `[]` or `new()`), so generated models no longer raise `CS8618`.
+- The C# keywords `__arglist`, `__makeref`, `__reftype` and `__refvalue` are rejected as type names and escaped as parameter names.
+- An interface named `ClientRuntime` or `RestService` no longer hides the types the aggregate client's factories call.
 - Generated code no longer suppresses the missing-documentation warning `CS1591`: every generated public type and member carries XML documentation, and the examples build with warnings as errors.
 - A model or enum named after a .NET or Refit type the generated code uses (`Task`, `Uri`, `CancellationToken`, ...) no longer breaks the build; that type is written in full in that client.
 - Generic records declare every template parameter of their TypeSpec declaration, and template parameters, models and enums whose names C# warns about or rejects are escaped.
