@@ -1,3 +1,7 @@
 # Handlebars templates generate C# code, not HTML.
 # Prettier's HTML parser mangles C# XML doc comment tags (e.g. </param>, </returns>).
 src/templates/*.hbs
+
+# Markdown tables follow the house style (aligned pipes, dashes across the full width),
+# which Prettier would rewrite.
+*.md
