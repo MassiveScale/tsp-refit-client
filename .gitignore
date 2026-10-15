@@ -24,5 +24,4 @@ obj/
 matrix/main.tsp
 matrix/package-lock.json
 
-.port-ref/
 dist-*/
