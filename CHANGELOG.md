@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Pagination.** An operation marked `@list` whose response declares `@pageItems` also gets an `IAsyncEnumerable<T>` extension method that reads every page, driven by TypeSpec's own paging decorators: `@nextLink`, `@continuationToken`, `@offset`, or `@pageIndex`. A next link is followed through the interface's own named `HttpClient` with the operation's header and cookie parameters, and only on the origin of the client's base address; a link to any other origin throws before it is sent. A paging shape the wrapper cannot read is reported as `unsupported-paging-style`, and the single-page method is generated as before.
+
 ## [1.0.0] - 2026-10-15
 
 The first stable release, and the first published to npm. The emitter now shares its core with its sibling, `@massivescale/tsp-flurl-client`: name validation, collision reporting, version projection, visibility filtering, type mapping, `@encode` support, and the lint rule are the same code, hardened over that emitter's development, with Refit as the transport.
