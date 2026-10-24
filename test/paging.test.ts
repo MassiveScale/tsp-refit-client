@@ -961,6 +961,40 @@ describe("paging", () => {
     });
   });
 
+  describe("discriminators", () => {
+    it("rejects a continuation token that is also the page's discriminator", async () => {
+      const [results, diagnostics] = await emitWithDiagnostics(`
+        import "@typespec/http";
+        using Http;
+
+        @service(#{ title: "Test API" })
+        namespace TestApi;
+
+        model Store { name: string; }
+
+        @discriminator("cursor")
+        model Page { @pageItems items: Store[]; @continuationToken cursor?: string; }
+        model StorePage extends Page { cursor: "stores"; }
+
+        @route("/stores")
+        interface Stores {
+          @list @get list(@query @continuationToken cursor?: string): Page;
+        }
+      `);
+      ok(
+        diagnostics.some(
+          (d) =>
+            d.code ===
+              "@massivescale/tsp-refit-client/unsupported-paging-style" &&
+            d.message.includes("also the page's discriminator"),
+        ),
+      );
+      const content = results["Endpoints/IStores.g.cs"];
+      ok(content.includes("ListAsync("), "Expected the raw method kept");
+      ok(!content.includes("ListAllAsync"), "Expected no wrapper");
+    });
+  });
+
   describe("the extensions class", () => {
     it("names the raw method through its interface when the operation has no doc", async () => {
       const results = await emit(`

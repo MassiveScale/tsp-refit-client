@@ -1715,8 +1715,22 @@ function buildPagingMethodView(
   }
   const offBody =
     "a paging property that is not a property of the response body (an explicit @body list, or a paging header)";
-  if (!pageProperties.has(pageItemsProp)) {
-    reportUnsupportedPaging(program, operation, offBody);
+  // In a `@discriminator` hierarchy the discriminator is only `[JsonPolymorphic]`
+  // metadata, never a member of the record, so the wrapper has nothing to read it from.
+  const discriminator = pageModel
+    ? findDiscriminatedRoot(program, pageModel)?.discriminator.propertyName
+    : undefined;
+  const asDiscriminator =
+    "a paging property that is also the page's discriminator, which the page's record has no member for";
+  const unreadable = (property: ModelProperty): string | undefined =>
+    !pageProperties.has(property)
+      ? offBody
+      : property.name === discriminator
+        ? asDiscriminator
+        : undefined;
+  const itemsProblem = unreadable(pageItemsProp);
+  if (itemsProblem) {
+    reportUnsupportedPaging(program, operation, itemsProblem);
     return undefined;
   }
 
@@ -1784,8 +1798,9 @@ function buildPagingMethodView(
     const nextLinkPropertyName = toCsPropName(
       getClientName(program, recordNextLink) ?? recordNextLink.name,
     );
-    if (!pageProperties.has(nextLink.property)) {
-      reportUnsupportedPaging(program, operation, offBody);
+    const nextLinkProblem = unreadable(nextLink.property);
+    if (nextLinkProblem) {
+      reportUnsupportedPaging(program, operation, nextLinkProblem);
       return undefined;
     }
     // The link is resolved with `new Uri(baseAddress, link)`, which takes a string or a
@@ -1862,8 +1877,9 @@ function buildPagingMethodView(
       );
       return undefined;
     }
-    if (!pageProperties.has(continuationToken.property)) {
-      reportUnsupportedPaging(program, operation, offBody);
+    const tokenProblem = unreadable(continuationToken.property);
+    if (tokenProblem) {
+      reportUnsupportedPaging(program, operation, tokenProblem);
       return undefined;
     }
     const inputToken = pagingOp.input.continuationToken;
