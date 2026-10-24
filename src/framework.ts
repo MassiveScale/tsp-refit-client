@@ -57,6 +57,7 @@ export const FRAMEWORK_TYPES: Readonly<Record<string, string>> = {
   HttpContent: "System.Net.Http",
   HttpMessageHandler: "System.Net.Http",
   HttpMethod: "System.Net.Http",
+  HttpMethodAttribute: "Refit",
   HttpRequestMessage: "System.Net.Http",
   HttpRequestOptionsKey: "System.Net.Http",
   HttpResponseMessage: "System.Net.Http",
