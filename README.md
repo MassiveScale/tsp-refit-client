@@ -440,7 +440,9 @@ When more than one signal is present on a page model, `nextLink` wins over `cont
 
 Only the `nextLink` strategy needs the extra `IHttpClientFactory` parameter: pass the one from the container you called `Add{Client}` on (a client built with `Create` has no such factory). `Add{Client}` registers the interface's `HttpClient` under a name the wrapper resolves, so continuation requests go through the same configuration, handlers, and serializer as the first page. The operation's header and cookie parameters are sent again on every continuation request, in the same wire format; query parameters are expected to be part of the link.
 
-A next-page link comes from the server, and the client sends it with whatever credentials you configured, such as an `Authorization` default header or an authentication handler. So each link is resolved against the client's `BaseAddress` (a relative link is fine) and must keep the same scheme, host, and port: a link to any other origin throws `InvalidOperationException` before the request is sent. A client with no `BaseAddress` throws as soon as the API returns a next-page link.
+A next-page link comes from the server, and the client sends it with whatever credentials you configured, such as an `Authorization` default header or an authentication handler. So each link is resolved against the client's `BaseAddress` and must keep the same scheme, host, and port: a link to any other origin throws `InvalidOperationException` before the request is sent. A client with no `BaseAddress` throws as soon as the API returns a next-page link.
+
+Next links should be absolute (`https://api.example.com/stores?page=2`) or root-relative (`/stores?page=2`). A link relative to the page it came from, such as `?page=2` or `page2`, is also resolved against `BaseAddress`, not against that page's URL as RFC 3986 would: the Refit method that reads the first page returns only its content, so the wrapper never learns the URL that page came from.
 
 An operation whose success may carry no body (`PagedResult<Store> | void`) ends the enumeration when that empty success comes back.
 
