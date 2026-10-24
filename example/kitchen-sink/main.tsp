@@ -434,3 +434,8 @@ interface Shelves {
     @query @continuationToken token?: string,
   ): TokenPage | void;
 }
+
+@route("/small-shelves")
+interface SmallShelves {
+  @list @get list(@query @offset offset?: uint8): CountedPage;
+}

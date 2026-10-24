@@ -676,10 +676,12 @@ function renderCounterPagingMethod(m: PagingMethodView): string[] {
   const item = m.itemVarName;
   const client = m.receiverVarName;
   const count = m.countVarName!;
+  // Checked, so a counter narrower than the position it must reach (a `uint8` offset
+  // past 255) throws instead of wrapping around and reading earlier pages again.
   const advance =
     m.strategy === "pageIndex"
-      ? `${m.counterVarName}++;`
-      : `${m.counterVarName} += (${m.counterCsType})${count};`;
+      ? `checked { ${m.counterVarName}++; }`
+      : `checked { ${m.counterVarName} += (${m.counterCsType})${count}; }`;
   return [
     pagingSignature(m),
     `    {`,

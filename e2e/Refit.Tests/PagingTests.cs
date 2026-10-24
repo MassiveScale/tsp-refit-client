@@ -69,6 +69,20 @@ public abstract class PagingTests
     }
 
     [TestMethod]
+    public async Task A_counter_too_narrow_for_the_next_position_throws_instead_of_wrapping_around()
+    {
+        var (client, handler) = Create();
+        var tenItems = string.Join(",", Enumerable.Repeat("{\"name\":\"x\"}", 10));
+        handler.RespondJson("{\"items\":[" + tenItems + "]}");
+
+        // A uint8 offset of 250 plus ten items would be 260, which a byte cannot hold.
+        var act = async () => await Paging.All(client.SmallShelves.ListAllAsync(offset: 250));
+
+        await act.Should().ThrowAsync<OverflowException>();
+        handler.Requests.Should().ContainSingle();
+    }
+
+    [TestMethod]
     public async Task A_declared_bodyless_success_ends_the_enumeration_without_items()
     {
         var (client, handler) = Create();

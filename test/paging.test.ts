@@ -325,7 +325,7 @@ describe("paging", () => {
         "Expected the optional offset parameter seeded with ?? 0",
       );
       ok(
-        content.includes("currentOffset += (int)count;"),
+        content.includes("checked { currentOffset += (int)count; }"),
         "Expected the offset advanced by the number of items actually received, cast to the counter's own type",
       );
       ok(
@@ -365,7 +365,7 @@ describe("paging", () => {
         "Expected the pageIndex counter seeded from the input parameter",
       );
       ok(
-        content.includes("currentPageIndex++;"),
+        content.includes("checked { currentPageIndex++; }"),
         "Expected the page index advanced by one per iteration",
       );
     });
@@ -579,7 +579,7 @@ describe("paging", () => {
         content.includes("var count2 = 0;") &&
           content.includes("count2++;") &&
           content.includes("if (count2 == 0) yield break;") &&
-          content.includes("currentOffset += (int)count2;"),
+          content.includes("checked { currentOffset += (int)count2; }"),
         "Expected the item-count variable renamed to avoid shadowing the count parameter",
       );
     });
@@ -1103,7 +1103,7 @@ describe("paging", () => {
           Object.keys(results).find((k) => k.endsWith("ICustomers.g.cs"))!
         ];
       ok(
-        content.includes("currentOffset += (ulong)count;"),
+        content.includes("checked { currentOffset += (ulong)count; }"),
         "Expected the int item-count cast to ulong before being added to the ulong counter — C# has no built-in += between them otherwise",
       );
     });
@@ -1133,7 +1133,7 @@ describe("paging", () => {
           Object.keys(results).find((k) => k.endsWith("ICustomers.g.cs"))!
         ];
       ok(
-        content.includes("currentPageIndex++;"),
+        content.includes("checked { currentPageIndex++; }"),
         "Expected a plain increment, which needs no cast regardless of the counter's numeric type",
       );
     });
