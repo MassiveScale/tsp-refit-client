@@ -809,6 +809,85 @@ describe("paging", () => {
     });
   });
 
+  describe("discriminated pages", () => {
+    it("types the items from the base record a derived page that narrows them inherits", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using Http;
+
+        @service(#{ title: "Test API" })
+        namespace TestApi;
+
+        model Book { title: string; }
+        model SignedBook extends Book { signedBy: string; }
+
+        @discriminator("kind")
+        model Catalog {
+          kind: string;
+          @pageItems items: Book[];
+          @nextLink next?: url;
+        }
+
+        model SignedCatalog extends Catalog {
+          kind: "signed";
+          items: SignedBook[];
+        }
+
+        @route("/catalogs")
+        interface Catalogs {
+          @list @get signed(): SignedCatalog;
+          @route("any") @list @get any(): Catalog;
+        }
+      `);
+      ok(
+        !results["Models/SignedCatalog.g.cs"].includes(" Items "),
+        "Expected the derived record to keep the inherited List<Book> Items",
+      );
+      const content = results["Endpoints/ICatalogs.g.cs"];
+      ok(
+        content.includes(
+          "public static async IAsyncEnumerable<Book> SignedAllAsync(",
+        ),
+        "Expected the wrapper to yield what the inherited Items property holds",
+      );
+      ok(
+        content.includes("FromHttpContentAsync<SignedCatalog>("),
+        "Expected continuation pages still read as the declared response type",
+      );
+    });
+  });
+
+  describe("pages that narrow their items", () => {
+    it("types the items from the narrowed declaration when the record is flattened", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using Http;
+
+        @service(#{ title: "Test API" })
+        namespace TestApi;
+
+        model Book { title: string; }
+        model SignedBook extends Book { signedBy: string; }
+        model Catalog { @pageItems items: Book[]; @nextLink next?: url; }
+        model SignedCatalog extends Catalog { items: SignedBook[]; }
+
+        @route("/catalogs")
+        interface Catalogs {
+          @list @get signed(): SignedCatalog;
+        }
+      `);
+      ok(
+        results["Models/SignedCatalog.g.cs"].includes("List<SignedBook> Items"),
+      );
+      ok(
+        results["Endpoints/ICatalogs.g.cs"].includes(
+          "public static async IAsyncEnumerable<SignedBook> SignedAllAsync(",
+        ),
+        "Expected the wrapper to yield the narrowed item type the record holds",
+      );
+    });
+  });
+
   describe("the extensions class", () => {
     it("names the raw method through its interface when the operation has no doc", async () => {
       const results = await emit(`

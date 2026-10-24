@@ -439,3 +439,30 @@ interface Shelves {
 interface SmallShelves {
   @list @get list(@query @offset offset?: uint8): CountedPage;
 }
+
+model Book {
+  title: string;
+}
+
+model SignedBook extends Book {
+  signedBy: string;
+}
+
+/** A discriminated page, whose derived page narrows the items it declares. */
+@discriminator("kind")
+model Catalog {
+  kind: string;
+  @pageItems items: Book[];
+  @nextLink next?: url;
+}
+
+model SignedCatalog extends Catalog {
+  kind: "signed";
+  items: SignedBook[];
+}
+
+@route("/catalogs")
+interface Catalogs {
+  @list @get signed(): SignedCatalog;
+  @route("any") @list @get any(): Catalog;
+}

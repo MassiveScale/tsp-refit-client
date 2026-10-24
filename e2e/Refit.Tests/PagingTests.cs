@@ -189,6 +189,20 @@ public sealed class NextLinkPagingTests
     }
 
     [TestMethod]
+    public async Task A_discriminated_page_that_narrows_its_items_yields_what_its_inherited_property_holds()
+    {
+        var (client, factory, handler) = Paging.Container();
+        handler
+            .RespondJson("""{"kind":"signed","items":[{"title":"a","signedBy":"x"}],"next":"/catalogs?cursor=2"}""")
+            .RespondJson("""{"kind":"signed","items":[{"title":"b","signedBy":"y"}]}""");
+
+        var books = await Paging.All(client.Catalogs.SignedAllAsync(factory));
+
+        books.Select(b => b.Title).Should().Equal("a", "b");
+        handler.Requests.Should().HaveCount(2);
+    }
+
+    [TestMethod]
     [DataRow("https://elsewhere.test/shelves/links?cursor=2")]
     [DataRow("http://api.test/shelves/links?cursor=2")]
     [DataRow("https://api.test:8443/shelves/links?cursor=2")]

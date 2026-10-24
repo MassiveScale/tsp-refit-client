@@ -1463,6 +1463,45 @@ function pageBodyModel(responses: HttpOperationResponse[]): Model | undefined {
 }
 
 /**
+ * The declaration of a page property whose C# type the page's record has. A record is
+ * flattened from its model and that model's bases, so a page redeclaring
+ * `items: NarrowItem[]` has `List<NarrowItem> Items`. A model in a `@discriminator`
+ * hierarchy instead derives from its base's record, which already declares the
+ * property, and leaves the redeclaration out (see `buildPropertyViews`), so the base
+ * record's declaration is the one it has.
+ *
+ * @param program - The compiler program.
+ * @param pageModel - The page model, or `undefined` when there is none.
+ * @param property - The paging property, wherever in the page's bases it is declared.
+ * @returns The declaration the record's property is typed from.
+ */
+function recordProperty(
+  program: Program,
+  pageModel: Model | undefined,
+  property: ModelProperty,
+): ModelProperty {
+  if (!pageModel) return property;
+  // The page's record, then each record it derives from.
+  const records = [pageModel];
+  for (
+    let base = pageModel.baseModel;
+    base && findDiscriminatedRoot(program, base);
+    base = base.baseModel
+  ) {
+    records.push(base);
+  }
+  // The topmost record is flattened; the ones deriving from it add only their own.
+  const top = records[records.length - 1];
+  const fromTop = flattenProperties(top).get(property.name);
+  if (fromTop) return fromTop;
+  for (let i = records.length - 2; i >= 0; i--) {
+    const own = records[i].properties.get(property.name);
+    if (own) return own;
+  }
+  return property;
+}
+
+/**
  * Reports the `unsupported-paging-style` warning for an operation whose
  * `@list` paging metadata doesn't resolve to a strategy this emitter can
  * generate a wrapper for. The raw single-page method is still generated.
@@ -1607,7 +1646,10 @@ function buildPagingMethodView(
   }
 
   const pageItemsProp = pagingOp.output.pageItems.property;
-  if (pageItemsProp.optional) {
+  // Typed from the property the record exposes, which a discriminated page that
+  // narrows its items does not redeclare.
+  const recordItemsProp = recordProperty(program, pageModel, pageItemsProp);
+  if (recordItemsProp.optional) {
     reportUnsupportedPaging(
       program,
       operation,
@@ -1615,7 +1657,7 @@ function buildPagingMethodView(
     );
     return undefined;
   }
-  const itemsArrayModel = pageItemsProp.type as Model;
+  const itemsArrayModel = recordItemsProp.type as Model;
   const itemType = mapType(
     itemsArrayModel.indexer!.value,
     program,
@@ -1624,7 +1666,7 @@ function buildPagingMethodView(
     usedHelpers,
   );
   const itemsPropertyName = toCsPropName(
-    getClientName(program, pageItemsProp) ?? pageItemsProp.name,
+    getClientName(program, recordItemsProp) ?? recordItemsProp.name,
   );
 
   // The page type is the raw method's own resolved response type, never
@@ -1653,9 +1695,14 @@ function buildPagingMethodView(
   // The wrapper reads every paging property off the page it got back, so each must be
   // a property of the response body: not of an envelope around an explicit `@body`, and
   // not a header.
-  const pageProperties = new Set(
-    pageModel ? flattenProperties(pageModel).values() : [],
-  );
+  // Every declaration along the page's bases, including ones a redeclaration shadows:
+  // the compiler reports a paging role where it is decorated, which can be a base
+  // whose property the page narrows.
+  const pageProperties = new Set<ModelProperty>();
+  for (let model = pageModel; model; model = model.baseModel) {
+    for (const property of model.properties.values())
+      pageProperties.add(property);
+  }
   const offBody =
     "a paging property that is not a property of the response body (an explicit @body list, or a paging header)";
   if (!pageProperties.has(pageItemsProp)) {
@@ -1729,7 +1776,7 @@ function buildPagingMethodView(
     // The link is resolved with `new Uri(baseAddress, link)`, which takes a string or a
     // Uri; a link formatted as anything else (`@format("uuid")`) cannot be followed.
     const nextLinkType = mapPropertyType(
-      nextLink.property,
+      recordProperty(program, pageModel, nextLink.property),
       program,
       models,
       enums,
@@ -1824,7 +1871,9 @@ function buildPagingMethodView(
         "",
       ) === "string";
     if (
-      !isString(continuationToken.property) ||
+      !isString(
+        recordProperty(program, pageModel, continuationToken.property),
+      ) ||
       !isString(inputToken!.property)
     ) {
       reportUnsupportedPaging(
