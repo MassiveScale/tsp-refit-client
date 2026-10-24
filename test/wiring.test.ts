@@ -204,7 +204,7 @@ describe("dependency injection registration", () => {
     );
     ok(
       content.includes(
-        ".AddRefitClient<T>(settings ?? ClientRuntime.CreateSettings(), httpClientName)",
+        ".AddRefitClient<T>(ClientRuntime.CreateSettings(), httpClientName)",
       ),
     );
     ok(content.includes(".ConfigureHttpClient(configureHttpClient)"));

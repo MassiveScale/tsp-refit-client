@@ -34,8 +34,7 @@ export type TemplateName =
   | "extensions"
   | "merge-patch"
   | "client-runtime"
-  | "paging-extensions"
-  | "refit-json-options";
+  | "paging-extensions";
 
 /**
  * Partial map of template names to absolute file paths used to override the
@@ -210,6 +209,12 @@ export interface PagingMethodView {
   itemType: string;
   /** C# type of the page response model, e.g. `"PagedResult<Store>"`. Used only by the `nextLink` strategy, to type the manually-deserialized continuation page. */
   pageType: string;
+  /**
+   * Whether the raw method can return no page at all, e.g. for `PagedResult<Store> | void`,
+   * whose bodyless success comes back as `null`. Every strategy then stops on a `null` page
+   * instead of dereferencing it.
+   */
+  pageNullable: boolean;
   /** PascalCase name of the page model's items-array property, e.g. `"Items"`. */
   itemsPropertyName: string;
   /** Pre-joined parameter list for the method signature, including the leading `this {Interface} client` receiver and a trailing `[EnumeratorCancellation] CancellationToken`. */
@@ -232,6 +237,8 @@ export interface PagingMethodView {
   receiverVarName: string;
   /** `nextLink` strategy only: PascalCase name of the page model's next-link property, e.g. `"Next"`. */
   nextLinkPropertyName?: string;
+  /** `nextLink` strategy only: whether the next-link property is a `string` rather than a `Uri`, so an empty string also ends the loop. */
+  nextLinkIsString?: boolean;
   /** `nextLink` strategy only: the named `HttpClient` to resolve via `IHttpClientFactory.CreateClient(...)`, qualified with the interface's C# namespace so it can't collide with an identically-named interface registered by a different service or API version. */
   httpClientName?: string;
   /** `nextLink` strategy only: collision-free name for the `IHttpClientFactory` parameter. */
@@ -246,15 +253,24 @@ export interface PagingMethodView {
   responseVarName?: string;
   /** `nextLink` strategy only: collision-free local variable name for the deserialized continuation page. */
   nextPageVarName?: string;
-  /** `nextLink` strategy only: collision-free local variable name for the same-origin check gating header/cookie replay. */
-  sameOriginVarName?: string;
+  /** `nextLink` strategy only: collision-free local variable name for the client's base address. */
+  baseAddressVarName?: string;
+  /** `nextLink` strategy only: collision-free local variable name for the next link resolved against the base address. */
+  nextUriVarName?: string;
+  /** `nextLink` strategy only: collision-free local variable name for the content serializer that reads continuation pages. */
+  serializerVarName?: string;
   /**
-   * `nextLink` strategy only: the raw method's header-bound parameters, replayed
-   * on every continuation request — bypassing Refit for `nextLink` means none of
-   * the raw method's own `[Header]` bindings (auth, tenant, API-version, ...)
-   * would otherwise reach page two onward.
+   * `nextLink` strategy only: the raw method's header and cookie parameters, replayed on
+   * every continuation request as the same request options the raw method sets, so the
+   * runtime's message handler writes them in the same wire format. Following nextLink
+   * bypasses Refit, so they would otherwise not reach page two onward.
    */
-  headerParams?: { paramName: string; headerName: string; optional: boolean }[];
+  replayOptions?: {
+    /** C# expression of the option key, e.g. `ClientRuntime.HeaderPrefix + "X-Tenant-Id"`. */
+    key: string;
+    /** C# expression of the option value, with the parameter's `@encode` applied. */
+    value: string;
+  }[];
   /** `continuationToken` strategy only: PascalCase name of the page model's continuation-token output property, e.g. `"ContinuationToken"`. */
   continuationTokenPropertyName?: string;
   /** `continuationToken` strategy only: expression seeding the local token variable, e.g. `"continuationToken"`. */
@@ -388,8 +404,6 @@ export interface Renderer {
   renderClientRuntime(): string;
   /** Renders the `{Interface}PagingExtensions` static class body holding one or more auto-paginating wrapper methods. */
   renderPagingExtensions(view: PagingExtensionsView): string;
-  /** Renders the shared `RefitJsonOptions` helper class body. Takes no view model. */
-  renderRefitJsonOptionsHelper(): string;
 }
 /**
  * Builds the Handlebars environment shared by every template, registering the
@@ -523,13 +537,42 @@ function renderPagingMethodDoc(m: PagingMethodView): string[] {
   if (m.strategy === "nextLink") {
     lines.push(
       `    /// <remarks>`,
-      `    /// Automatically follows the response's next-page link until none remains. The first`,
-      `    /// page's failures surface as Refit's <c>ApiException</c>; failures while following a`,
-      `    /// continuation link surface as <see cref="HttpRequestException"/> instead.`,
+      `    /// Follows the response's next-page link until none remains. Each link is resolved against the`,
+      `    /// client's base address and must keep its scheme, host, and port: a link to any other origin`,
+      `    /// throws <see cref="${fx("InvalidOperationException")}"/> before anything is sent, so the credentials this`,
+      `    /// client carries never reach a server the API pointed it at. The first page's failures surface as`,
+      `    /// Refit's <c>ApiException</c>; failures while following a link surface as <c>HttpRequestException</c>.`,
       `    /// </remarks>`,
     );
   }
   return lines;
+}
+
+/**
+ * The statement that ends a paging wrapper on a `null` page, which a raw method whose
+ * success may carry no body (`PagedResult<Store> | void`) returns for that success.
+ *
+ * @param m - The paging method.
+ * @param page - The page variable.
+ * @param indent - The statement's indentation.
+ * @returns The statement, or nothing when every success carries a page.
+ */
+function nullPageGuard(
+  m: PagingMethodView,
+  page: string,
+  indent: string,
+): string[] {
+  return m.pageNullable ? [`${indent}if (${page} is null) yield break;`] : [];
+}
+
+/**
+ * The signature line every paging wrapper method shares.
+ *
+ * @param m - The paging method.
+ * @returns The line, without a trailing brace.
+ */
+function pagingSignature(m: PagingMethodView): string {
+  return `    public static async ${fx("IAsyncEnumerable", "generic")}<${m.itemType}> ${m.methodName}(${m.paramsDeclaration})`;
 }
 
 /** Renders the `nextLink`-strategy paging wrapper method body (see {@link PagingMethodView}). */
@@ -540,52 +583,52 @@ function renderNextLinkPagingMethod(m: PagingMethodView): string[] {
   const client = m.receiverVarName;
   const httpClientFactory = m.httpClientFactoryVarName!;
   const httpClient = m.httpClientVarName!;
+  const baseAddress = m.baseAddressVarName!;
+  const serializer = m.serializerVarName!;
   const nextLink = m.nextLinkVarName!;
+  const nextUri = m.nextUriVarName!;
   const request = m.requestVarName!;
   const response = m.responseVarName!;
   const nextPage = m.nextPageVarName!;
-  const sameOrigin = m.sameOriginVarName!;
-  const hasHeaders = (m.headerParams ?? []).length > 0;
-  const headerLines = (m.headerParams ?? []).map((h) =>
-    h.optional
-      ? `                if (${h.paramName} is not null) ${request}.Headers.TryAddWithoutValidation("${h.headerName}", ${h.paramName}.ToString());`
-      : `                ${request}.Headers.TryAddWithoutValidation("${h.headerName}", ${h.paramName}.ToString());`,
-  );
+  const uri = fx("Uri");
+  const invalid = fx("InvalidOperationException");
+  const more = m.nextLinkIsString
+    ? `!string.IsNullOrEmpty(${nextLink})`
+    : `${nextLink} is not null`;
+  const last = m.nextLinkIsString
+    ? `string.IsNullOrEmpty(${nextLink})`
+    : `${nextLink} is null`;
   return [
-    `    public static async IAsyncEnumerable<${m.itemType}> ${m.methodName}(${m.paramsDeclaration})`,
+    pagingSignature(m),
     `    {`,
     `        var ${page} = await ${client}.${m.rawMethodName}(${callArgs}).ConfigureAwait(false);`,
+    ...nullPageGuard(m, page, "        "),
     `        foreach (var ${item} in ${page}.${m.itemsPropertyName})`,
     `        {`,
     `            cancellationToken.ThrowIfCancellationRequested();`,
     `            yield return ${item};`,
     `        }`,
     ``,
-    `        var ${httpClient} = ${httpClientFactory}.CreateClient("${m.httpClientName}");`,
     `        var ${nextLink} = ${page}.${m.nextLinkPropertyName};`,
-    `        while (${nextLink} is not null)`,
+    `        if (${last}) yield break;`,
+    `        var ${httpClient} = ${httpClientFactory}.CreateClient("${m.httpClientName}");`,
+    `        var ${baseAddress} = ${httpClient}.BaseAddress ?? throw new ${invalid}("The \\"${m.httpClientName}\\" HttpClient has no BaseAddress to check next-page links against.");`,
+    `        var ${serializer} = ClientRuntime.CreateSettings().ContentSerializer;`,
+    `        while (${more})`,
     `        {`,
-    `            using var ${request} = new HttpRequestMessage(HttpMethod.Get, ${nextLink});`,
-    // The raw method's own [Header] bindings (auth, tenant, API-version, ...)
-    // are replayed by hand, since following nextLink bypasses Refit entirely —
-    // but only when nextLink resolves to the same scheme/host/port the client
-    // is configured for: nextLink is server-controlled, and blindly forwarding
-    // credentials to wherever it happens to point would leak them to a
-    // different origin. No configured BaseAddress means there's nothing safe
-    // to compare against, so no header is sent in that case either.
-    ...(hasHeaders
-      ? [
-          `            var ${sameOrigin} = ${httpClient}.BaseAddress is not null`,
-          `                && Uri.Compare(${nextLink}, ${httpClient}.BaseAddress, UriComponents.SchemeAndServer, UriFormat.UriEscaped, StringComparison.OrdinalIgnoreCase) == 0;`,
-          `            if (${sameOrigin})`,
-          `            {`,
-          ...headerLines,
-          `            }`,
-        ]
-      : []),
+    `            var ${nextUri} = new ${uri}(${baseAddress}, ${nextLink});`,
+    `            if (${uri}.Compare(${nextUri}, ${baseAddress}, ${fx("UriComponents")}.SchemeAndServer, ${fx("UriFormat")}.UriEscaped, ${fx("StringComparison")}.OrdinalIgnoreCase) != 0)`,
+    `            {`,
+    `                throw new ${invalid}("Refusing to follow a next-page link to " + ${nextUri}.Scheme + "://" + ${nextUri}.Authority + ", which is not the origin of the client's base address.");`,
+    `            }`,
+    `            using var ${request} = new ${fx("HttpRequestMessage")}(${fx("HttpMethod")}.Get, ${nextUri});`,
+    ...(m.replayOptions ?? []).map(
+      (o) =>
+        `            ${request}.Options.Set(new ${fx("HttpRequestOptionsKey", "generic")}<object?>(${o.key}), ${o.value});`,
+    ),
     `            using var ${response} = await ${httpClient}.SendAsync(${request}, cancellationToken).ConfigureAwait(false);`,
     `            ${response}.EnsureSuccessStatusCode();`,
-    `            var ${nextPage} = await ${response}.Content.ReadFromJsonAsync<${m.pageType}>(RefitJsonOptions.Default, cancellationToken).ConfigureAwait(false);`,
+    `            var ${nextPage} = await ${serializer}.FromHttpContentAsync<${m.pageType}>(${response}.Content, cancellationToken).ConfigureAwait(false);`,
     `            if (${nextPage} is null) yield break;`,
     `            foreach (var ${item} in ${nextPage}.${m.itemsPropertyName})`,
     `            {`,
@@ -606,12 +649,13 @@ function renderContinuationTokenPagingMethod(m: PagingMethodView): string[] {
   const client = m.receiverVarName;
   const token = m.tokenVarName!;
   return [
-    `    public static async IAsyncEnumerable<${m.itemType}> ${m.methodName}(${m.paramsDeclaration})`,
+    pagingSignature(m),
     `    {`,
-    `        var ${token} = ${m.continuationTokenSeedExpression};`,
+    `        string? ${token} = ${m.continuationTokenSeedExpression};`,
     `        do`,
     `        {`,
     `            var ${page} = await ${client}.${m.rawMethodName}(${callArgs}).ConfigureAwait(false);`,
+    ...nullPageGuard(m, page, "            "),
     `            foreach (var ${item} in ${page}.${m.itemsPropertyName})`,
     `            {`,
     `                cancellationToken.ThrowIfCancellationRequested();`,
@@ -635,12 +679,13 @@ function renderCounterPagingMethod(m: PagingMethodView): string[] {
       ? `${m.counterVarName}++;`
       : `${m.counterVarName} += (${m.counterCsType})${count};`;
   return [
-    `    public static async IAsyncEnumerable<${m.itemType}> ${m.methodName}(${m.paramsDeclaration})`,
+    pagingSignature(m),
     `    {`,
     `        var ${m.counterVarName} = ${m.counterSeedExpression};`,
     `        while (true)`,
     `        {`,
     `            var ${page} = await ${client}.${m.rawMethodName}(${callArgs}).ConfigureAwait(false);`,
+    ...nullPageGuard(m, page, "            "),
     `            var ${count} = 0;`,
     `            foreach (var ${item} in ${page}.${m.itemsPropertyName})`,
     `            {`,
@@ -715,11 +760,6 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
     "paging-extensions",
     overrides["paging-extensions"],
   );
-  const refitJsonOptionsTemplate = loadTemplate(
-    env,
-    "refit-json-options",
-    overrides["refit-json-options"],
-  );
 
   return {
     renderFile(view) {
@@ -772,10 +812,6 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
         access: view.access,
         methodsBlock,
       });
-    },
-
-    renderRefitJsonOptionsHelper() {
-      return refitJsonOptionsTemplate({});
     },
   };
 }

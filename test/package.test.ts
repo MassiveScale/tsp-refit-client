@@ -80,7 +80,6 @@ describe("the published package", () => {
       "paging-extensions.hbs",
       "record.hbs",
       "refit-interface.hbs",
-      "refit-json-options.hbs",
     ]);
   });
 

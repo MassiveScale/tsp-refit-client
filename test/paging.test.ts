@@ -66,15 +66,17 @@ describe("paging", () => {
       );
       ok(
         content.includes(
-          "ReadFromJsonAsync<PagedResult<Store>>(RefitJsonOptions.Default",
-        ),
-        "Expected manual deserialization using the shared RefitJsonOptions",
+          "var serializer = ClientRuntime.CreateSettings().ContentSerializer;",
+        ) &&
+          content.includes(
+            "await serializer.FromHttpContentAsync<PagedResult<Store>>(response.Content, cancellationToken)",
+          ),
+        "Expected continuation pages read by the same serializer Refit reads the first page with",
       );
-
-      const jsonOptionsFile = Object.keys(results).find((k) =>
-        k.endsWith("RefitJsonOptions.g.cs"),
+      ok(
+        !Object.keys(results).some((k) => k.endsWith("RefitJsonOptions.g.cs")),
+        "Expected no separate JSON options helper",
       );
-      ok(jsonOptionsFile, "Expected RefitJsonOptions.g.cs to be emitted");
 
       const extFile = Object.keys(results).find((k) =>
         k.endsWith("TestApiClientExtensions.g.cs"),
@@ -82,9 +84,99 @@ describe("paging", () => {
       ok(extFile, "Expected TestApiClientExtensions.g.cs");
       ok(
         results[extFile].includes(
-          'AddEndpoint<IStores>(services, configureHttpClient, configureBuilder, "TestApi.Client.IStores", new RefitSettings(new SystemTextJsonContentSerializer(RefitJsonOptions.Default)));',
+          'AddEndpoint<IStores>(services, configureHttpClient, configureBuilder, "TestApi.Client.IStores");',
         ),
         "Expected named-client DI registration, under the same namespace-qualified name the wrapper resolves",
+      );
+      ok(
+        !results[extFile].includes("SystemTextJsonContentSerializer"),
+        "Expected the paginated interface to keep the runtime's own Refit settings",
+      );
+    });
+
+    it("resolves each link against the base address and refuses any other origin", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using Http;
+
+        @service(#{ title: "Test API" })
+        namespace TestApi;
+
+        model Store { name: string; }
+        model StorePage { @pageItems items: Store[]; @nextLink next?: url; }
+
+        @route("/stores")
+        interface Stores {
+          @list @get list(): StorePage;
+        }
+      `);
+      const content = results["Endpoints/IStores.g.cs"];
+      ok(
+        content.includes(
+          'var baseAddress = httpClient.BaseAddress ?? throw new InvalidOperationException("The \\"TestApi.Client.IStores\\" HttpClient has no BaseAddress to check next-page links against.");',
+        ),
+        "Expected a missing base address to fail before following any link",
+      );
+      ok(
+        content.includes("var nextUri = new Uri(baseAddress, nextLink);"),
+        "Expected relative links resolved against the base address",
+      );
+      ok(
+        content.includes(
+          "if (Uri.Compare(nextUri, baseAddress, UriComponents.SchemeAndServer, UriFormat.UriEscaped, StringComparison.OrdinalIgnoreCase) != 0)",
+        ) &&
+          content.includes(
+            'throw new InvalidOperationException("Refusing to follow a next-page link to " + nextUri.Scheme + "://" + nextUri.Authority',
+          ),
+        "Expected a link to another origin to throw rather than be sent with the client's credentials",
+      );
+      ok(
+        content.includes(
+          "using var request = new HttpRequestMessage(HttpMethod.Get, nextUri);",
+        ),
+        "Expected the request sent to the resolved, checked link",
+      );
+      ok(
+        content.indexOf("!= 0)") < content.indexOf("httpClient.SendAsync("),
+        "Expected the origin check before the request is sent",
+      );
+      ok(
+        content.includes("while (nextLink is not null)"),
+        "Expected a Uri link to end the loop when null",
+      );
+      ok(
+        content.indexOf("if (nextLink is null) yield break;") >= 0 &&
+          content.indexOf("if (nextLink is null) yield break;") <
+            content.indexOf("httpClientFactory.CreateClient("),
+        "Expected a single page to finish without resolving the HttpClient or checking its base address",
+      );
+    });
+
+    it("accepts a string-typed next link and ends on an empty one", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using Http;
+
+        @service(#{ title: "Test API" })
+        namespace TestApi;
+
+        model Store { name: string; }
+        model StorePage { @pageItems items: Store[]; @nextLink next?: string; }
+
+        @route("/stores")
+        interface Stores {
+          @list @get list(@header("X-Tenant-Id") tenantId?: string): StorePage;
+        }
+      `);
+      const content = results["Endpoints/IStores.g.cs"];
+      ok(
+        content.includes("while (!string.IsNullOrEmpty(nextLink))"),
+        "Expected an empty string link to end the loop",
+      );
+      ok(content.includes("if (string.IsNullOrEmpty(nextLink)) yield break;"));
+      ok(
+        content.includes("var nextUri = new Uri(baseAddress, nextLink);"),
+        "Expected a string link resolved through the same Uri constructor",
       );
     });
   });
@@ -128,7 +220,7 @@ describe("paging", () => {
         "continuationToken strategy must not need an HttpClientFactory",
       );
       ok(
-        content.includes("var token = continuationToken;"),
+        content.includes("string? token = continuationToken;"),
         "Expected the token seeded from the input parameter",
       );
       ok(
@@ -138,11 +230,6 @@ describe("paging", () => {
       ok(
         content.includes("while (!string.IsNullOrEmpty(token));"),
         "Expected the loop to stop once the token is empty",
-      );
-
-      ok(
-        !Object.keys(results).some((k) => k.endsWith("RefitJsonOptions.g.cs")),
-        "continuationToken strategy must not emit the RefitJsonOptions helper",
       );
 
       const extFile = Object.keys(results).find((k) =>
@@ -244,10 +331,6 @@ describe("paging", () => {
       ok(
         content.includes("if (count == 0) yield break;"),
         "Expected the loop to stop on an empty page",
-      );
-      ok(
-        !Object.keys(results).some((k) => k.endsWith("RefitJsonOptions.g.cs")),
-        "offset strategy must not emit the RefitJsonOptions helper",
       );
     });
 
@@ -354,7 +437,7 @@ describe("paging", () => {
       const content =
         results[Object.keys(results).find((k) => k.endsWith("IPets.g.cs"))!];
       ok(
-        content.includes("var token2 = token;"),
+        content.includes("string? token2 = token;"),
         "Expected the loop-local token variable renamed to avoid shadowing the token parameter",
       );
       ok(
@@ -396,7 +479,7 @@ describe("paging", () => {
         "Expected the HttpClient variable renamed to avoid shadowing the httpClient parameter",
       );
       ok(
-        content.includes("new HttpRequestMessage(HttpMethod.Get, nextLink)") &&
+        content.includes("new HttpRequestMessage(HttpMethod.Get, nextUri)") &&
           content.includes("using var request2 ="),
         "Expected the HttpRequestMessage variable renamed to avoid shadowing the request parameter",
       );
@@ -502,8 +585,14 @@ describe("paging", () => {
     });
   });
 
-  describe("headers on nextLink continuation requests", () => {
-    it("replays an optional header parameter on every continuation request", async () => {
+  describe("headers and cookies on nextLink continuation requests", () => {
+    /**
+     * Emits a nextLink-paged `Stores.list` with the given parameters.
+     *
+     * @param params - The operation's parameter list.
+     * @returns The generated `IStores.g.cs`.
+     */
+    const storesWith = async (params: string): Promise<string> => {
       const results = await emit(`
         import "@typespec/http";
         using Http;
@@ -512,74 +601,74 @@ describe("paging", () => {
         namespace TestApi;
 
         model Store { name: string; }
-
-        model PagedResult<T> {
-          @pageItems items: T[];
-          @nextLink next?: url;
-        }
+        model StorePage { @pageItems items: Store[]; @nextLink next?: url; }
 
         @route("/stores")
         interface Stores {
-          @list @get list(@header("X-Tenant-Id") tenantId?: string): PagedResult<Store>;
+          @list @get list(${params}): StorePage;
         }
       `);
+      return results["Endpoints/IStores.g.cs"];
+    };
 
-      const content =
-        results[Object.keys(results).find((k) => k.endsWith("IStores.g.cs"))!];
-      ok(
-        content.includes(
-          'if (tenantId is not null) request.Headers.TryAddWithoutValidation("X-Tenant-Id", tenantId.ToString());',
-        ),
-        "Expected the optional header replayed, guarded against null",
+    it("replays a header as the same request option the raw method sets", async () => {
+      const content = await storesWith(
+        `@header("X-Tenant-Id") tenantId?: string`,
       );
       ok(
         content.includes(
-          "using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);",
+          'request.Options.Set(new HttpRequestOptionsKey<object?>(ClientRuntime.HeaderPrefix + "X-Tenant-Id"), tenantId);',
         ),
-        "Expected the continuation request sent via the built HttpRequestMessage",
+        "Expected the header handed to the runtime's handler, which skips a null value",
       );
       ok(
-        content.includes(
-          "var sameOrigin = httpClient.BaseAddress is not null",
-        ) &&
-          content.includes(
-            "Uri.Compare(nextLink, httpClient.BaseAddress, UriComponents.SchemeAndServer, UriFormat.UriEscaped, StringComparison.OrdinalIgnoreCase) == 0;",
-          ) &&
-          content.includes("if (sameOrigin)"),
-        "Expected headers gated behind a same-origin check, so nextLink can't be used to exfiltrate credentials to a different host",
+        !content.includes("TryAddWithoutValidation") &&
+          !content.includes("sameOrigin"),
+        "Expected no hand-written header writing and no per-header origin gate",
       );
     });
 
-    it("does not emit a same-origin check at all when the operation has no headers to replay", async () => {
-      const results = await emit(`
-        import "@typespec/http";
-        using Http;
-
-        @service(#{ title: "Test API" })
-        namespace TestApi;
-
-        model Store { name: string; }
-
-        model PagedResult<T> {
-          @pageItems items: T[];
-          @nextLink next?: url;
-        }
-
-        @route("/stores")
-        interface Stores {
-          @list @get list(@query skip?: int32): PagedResult<Store>;
-        }
-      `);
-
-      const content =
-        results[Object.keys(results).find((k) => k.endsWith("IStores.g.cs"))!];
+    it("replays a required header unconditionally", async () => {
+      const content = await storesWith(
+        `@header("Authorization") authorization: string`,
+      );
       ok(
-        !content.includes("sameOrigin"),
-        "Expected no dead same-origin check when there is nothing to guard",
+        content.includes(
+          'request.Options.Set(new HttpRequestOptionsKey<object?>(ClientRuntime.HeaderPrefix + "Authorization"), authorization);',
+        ),
       );
     });
 
-    it("replays a required header parameter unconditionally", async () => {
+    it("replays a cookie as well as headers", async () => {
+      const content = await storesWith(`@cookie sessionId?: string`);
+      ok(
+        /request\.Options\.Set\(new HttpRequestOptionsKey<object\?>\(ClientRuntime\.CookiePrefix \+ "[^"]+"\), sessionId\);/.test(
+          content,
+        ),
+        "Expected the cookie replayed through the runtime's cookie option",
+      );
+    });
+
+    it("applies a header's wire format before replaying it", async () => {
+      const content = await storesWith(
+        `@header("If-Modified-Since") since?: utcDateTime`,
+      );
+      ok(
+        content.includes(
+          'request.Options.Set(new HttpRequestOptionsKey<object?>(ClientRuntime.HeaderPrefix + "If-Modified-Since"), ClientRuntime.Encode(since, ClientRuntime.WireEncoding.Rfc7231));',
+        ),
+        "Expected the date sent in the same RFC 7231 format as the first page",
+      );
+    });
+
+    it("replays nothing when the operation has no header or cookie parameters", async () => {
+      const content = await storesWith(`@query skip?: int32`);
+      ok(!content.includes("request.Options.Set("));
+    });
+  });
+
+  describe("bodyless success responses", () => {
+    it("stops on a null page in every strategy instead of dereferencing it", async () => {
       const results = await emit(`
         import "@typespec/http";
         using Http;
@@ -588,26 +677,111 @@ describe("paging", () => {
         namespace TestApi;
 
         model Store { name: string; }
+        model LinkPage { @pageItems items: Store[]; @nextLink next?: url; }
+        model TokenPage { @pageItems items: Store[]; @continuationToken token?: string; }
+        model OffsetPage { @pageItems items: Store[]; }
 
-        model PagedResult<T> {
-          @pageItems items: T[];
-          @nextLink next?: url;
+        @route("/a") interface A { @list @get list(): LinkPage | void; }
+        @route("/b") interface B { @list @get list(@query @continuationToken token?: string): TokenPage | void; }
+        @route("/c") interface C { @list @get list(@query @offset offset?: int32): OffsetPage | void; }
+      `);
+      for (const name of ["IA", "IB", "IC"]) {
+        const content = results[`Endpoints/${name}.g.cs`];
+        ok(
+          /var page = await client\.ListAsync\([^)]*\)\.ConfigureAwait\(false\);\s+if \(page is null\) yield break;/.test(
+            content,
+          ),
+          `Expected ${name}'s wrapper to stop on a null page`,
+        );
+      }
+    });
+
+    it("emits no null check when every success carries a page", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using Http;
+
+        @service(#{ title: "Test API" })
+        namespace TestApi;
+
+        model Store { name: string; }
+        model OffsetPage { @pageItems items: Store[]; }
+
+        @route("/c") interface C { @list @get list(@query @offset offset?: int32): OffsetPage; }
+      `);
+      ok(!results["Endpoints/IC.g.cs"].includes("if (page is null)"));
+    });
+  });
+
+  describe("continuation token types", () => {
+    it("rejects a token that does not map to a string", async () => {
+      const [results, diagnostics] = await emitWithDiagnostics(`
+        import "@typespec/http";
+        using Http;
+
+        @service(#{ title: "Test API" })
+        namespace TestApi;
+
+        model Store { name: string; }
+        model TokenPage {
+          @pageItems items: Store[];
+          @continuationToken @format("uuid") token?: string;
         }
 
         @route("/stores")
         interface Stores {
-          @list @get list(@header("Authorization") authorization: string): PagedResult<Store>;
+          @list @get list(@query @continuationToken @format("uuid") token?: string): TokenPage;
         }
       `);
-
-      const content =
-        results[Object.keys(results).find((k) => k.endsWith("IStores.g.cs"))!];
       ok(
-        content.includes(
-          'request.Headers.TryAddWithoutValidation("Authorization", authorization.ToString());',
-        ) &&
-          !content.includes("if (authorization is not null) request.Headers"),
-        "Expected the required header replayed unconditionally, with no null guard",
+        diagnostics.some(
+          (d) =>
+            d.code ===
+              "@massivescale/tsp-refit-client/unsupported-paging-style" &&
+            d.message.includes("not a string"),
+        ),
+        "Expected the token type reported",
+      );
+      const content = results["Endpoints/IStores.g.cs"];
+      ok(content.includes("ListAsync("), "Expected the raw method kept");
+      ok(!content.includes("ListAllAsync"), "Expected no wrapper");
+    });
+  });
+
+  describe("wrapper names", () => {
+    it("leaves out a wrapper whose name another operation's method already has", async () => {
+      const [results, diagnostics] = await emitWithDiagnostics(`
+        import "@typespec/http";
+        using Http;
+
+        @service(#{ title: "Test API" })
+        namespace TestApi;
+
+        model Store { name: string; }
+        model OffsetPage { @pageItems items: Store[]; }
+
+        @route("/stores")
+        interface Stores {
+          @list @get list(@query @offset offset?: int32): OffsetPage;
+          @route("/all") @get listAll(): Store[];
+        }
+      `);
+      const content = results["Endpoints/IStores.g.cs"];
+      ok(
+        content.includes("Task<List<Store>> ListAllAsync("),
+        "Expected the listAll operation's own method kept",
+      );
+      ok(
+        !content.includes("IStoresPagingExtensions"),
+        "Expected the colliding wrapper left out",
+      );
+      ok(
+        diagnostics.some(
+          (d) =>
+            d.code ===
+              "@massivescale/tsp-refit-client/unsupported-paging-style" &&
+            d.message.includes("ListAllAsync"),
+        ),
       );
     });
   });
@@ -641,7 +815,7 @@ describe("paging", () => {
         results[Object.keys(results).find((k) => k.endsWith("IStores.g.cs"))!];
       ok(
         content.includes(
-          "ReadFromJsonAsync<StorePage>(RefitJsonOptions.Default",
+          "serializer.FromHttpContentAsync<StorePage>(response.Content",
         ),
         "Expected continuation pages deserialized as the actual response type (StorePage), not the base model that merely declares @pageItems",
       );

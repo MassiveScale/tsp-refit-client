@@ -136,7 +136,7 @@ describe("client", () => {
     ok(content, "Expected TestApiClientExtensions.g.cs");
     ok(
       content.includes(
-        ".AddRefitClient<T>(settings ?? ClientRuntime.CreateSettings(), httpClientName)",
+        ".AddRefitClient<T>(ClientRuntime.CreateSettings(), httpClientName)",
       ),
       "Expected the interface registered with the runtime's Refit settings",
     );

@@ -361,7 +361,7 @@ A request or success response that cannot be sent or read correctly is reported 
 - A `@discriminator` model that is also a variant of another discriminated model (a nested discriminator). `System.Text.Json` can resolve only one discriminator per hierarchy. Reported as `unsupported-nested-discriminator`. A grouping model with no discriminator of its own (`model Dog extends Animal {}`) is fine.
 - `@encode` values the client cannot honour (see the encodings table). Reported as `unsupported-encoding`.
 - Streaming responses such as server-sent events are read in full before the call returns.
-- A `@list` operation whose paging metadata doesn't resolve to a supported forward-iteration strategy — a paging role nested inside a sub-object instead of declared directly, an optional `@pageItems` array, a `continuationToken` output with no matching input parameter, an anonymous/unmappable page response type, or no `nextLink`/`continuationToken`/`offset`/`pageIndex` signal at all. Reported as `unsupported-paging-style`; the raw single-page method is still generated.
+- A `@list` operation whose paging metadata doesn't resolve to a supported forward-iteration strategy — a paging role nested inside a sub-object instead of declared directly, an optional `@pageItems` array, a `continuationToken` output with no matching input parameter or that is not a string, an anonymous/unmappable page response type, a wrapper name another operation's method already uses, or no `nextLink`/`continuationToken`/`offset`/`pageIndex` signal at all. Reported as `unsupported-paging-style`; the raw single-page method is still generated.
 
 ### Merge-patch request bodies
 
@@ -430,15 +430,19 @@ await foreach (var store in client.Stores.ListAllAsync(httpClientFactory, cancel
 }
 ```
 
-| Strategy                          | How the wrapper advances                                                                                 | Extra parameter          |
-|------------------------------------|-----------------------------------------------------------------------------------------------------------|---------------------------|
-| `@nextLink`                        | Follows the response's opaque next-page URL via a raw, named `HttpClient`, bypassing Refit for continuation requests. | `IHttpClientFactory`      |
-| `@continuationToken`               | Re-calls the raw Refit method, feeding the previous response's token back into the matching input parameter. | none                      |
-| `@offset` / `@pageIndex`           | Re-calls the raw Refit method with the counter advanced by the received item count (`offset`) or by one (`pageIndex`); stops on an empty page. | none                      |
+| Strategy                 | How the wrapper advances                                                                                                                       | Extra parameter      |
+|--------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|----------------------|
+| `@nextLink`              | Follows the response's next-page link through the interface's own named `HttpClient`, bypassing Refit for continuation requests.               | `IHttpClientFactory` |
+| `@continuationToken`     | Re-calls the raw Refit method, feeding the previous response's token back into the matching input parameter. The token must be a `string`.     | none                 |
+| `@offset` / `@pageIndex` | Re-calls the raw Refit method with the counter advanced by the received item count (`offset`) or by one (`pageIndex`); stops on an empty page. | none                 |
 
 When more than one signal is present on a page model, `nextLink` wins over `continuationToken`, which wins over `offset`/`pageIndex` — `nextLink` is the most self-contained, since the URL already embeds everything the next request needs. `prevLink`/`firstLink`/`lastLink` are backward/random-access links, not forward-iteration drivers, and render as ordinary model properties with no special codegen.
 
-Only the `nextLink` strategy needs the extra `IHttpClientFactory` parameter and a named `HttpClient`/`RefitSettings` registration (wired up automatically in the DI extension method); the `continuationToken` and `offset`/`pageIndex` strategies call straight through the existing Refit interface and need nothing extra.
+Only the `nextLink` strategy needs the extra `IHttpClientFactory` parameter. `Add{Client}` registers the interface's `HttpClient` under a name the wrapper resolves, so continuation requests go through the same configuration, handlers, and serializer as the first page. The operation's header and cookie parameters are sent again on every continuation request, in the same wire format; query parameters are expected to be part of the link.
+
+A next-page link comes from the server, and the client sends it with whatever credentials you configured, such as an `Authorization` default header or an authentication handler. So each link is resolved against the client's `BaseAddress` (a relative link is fine) and must keep the same scheme, host, and port: a link to any other origin throws `InvalidOperationException` before the request is sent. A client with no `BaseAddress` throws as soon as the API returns a next-page link.
+
+An operation whose success may carry no body (`PagedResult<Store> | void`) ends the enumeration when that empty success comes back.
 
 ## Multiple API versions
 

@@ -214,12 +214,6 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
           description:
             "Static class template holding an interface's generated auto-paginating IAsyncEnumerable<T> wrapper method(s), emitted only when at least one `@list` operation resolves to a supported paging strategy.",
         },
-        "refit-json-options": {
-          type: "string",
-          nullable: true,
-          description:
-            "Shared JsonSerializerOptions helper template, emitted only when a nextLink-strategy paging wrapper is generated.",
-        },
       },
       required: [],
     },

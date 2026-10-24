@@ -65,7 +65,6 @@ import {
   soleVariant,
   MERGE_PATCH_HELPER_NAME,
   MERGE_PATCH_INTERFACE_NAME,
-  PAGING_JSON_OPTIONS_HELPER_NAME,
   type UsedHelpers,
   toCsPropName,
 } from "./utils.js";
@@ -172,8 +171,19 @@ interface ParamInfo {
   plainDeclaration: string;
   /** The TypeSpec property this parameter was derived from, if any. */
   property?: ModelProperty;
-  /** The wire header name, when this parameter is bound via `[Header("...")]` — needed to replay it on a `nextLink` continuation request, which bypasses Refit (and so would otherwise silently drop it). */
-  headerName?: string;
+  /**
+   * For a header or cookie parameter, the request option the raw method sets for it, which the
+   * runtime's message handler writes in wire format. A `nextLink` continuation request bypasses
+   * Refit, so it sets the same option itself.
+   */
+  replay?: {
+    /** The `ClientRuntime` key prefix: `HeaderPrefix` or `CookiePrefix`. */
+    prefix: "HeaderPrefix" | "CookiePrefix";
+    /** The wire name, e.g. `X-Tenant-Id`. */
+    name: string;
+    /** The parameter's wire format, applied before the handler writes it. */
+    wire?: WireEncoding;
+  };
 }
 
 /**
@@ -569,6 +579,7 @@ export function buildInterface(
   // `read` and `Read` both become `ReadAsync`, which C# would reject as a duplicate
   // member (or an ambiguous overload), so the second is reported and left out.
   const methodScope = new MemberScope(program, "method", `interface ${csName}`);
+  const operationOf = new Map<MethodView, Operation>();
   const methods = ops.flatMap((op) => {
     // An operation whose name is not a valid C# identifier is reported and left
     // out, rather than rendered as a method that cannot compile.
@@ -588,13 +599,17 @@ export function buildInterface(
       csNs,
     );
     if (!view) return [];
-    return methodScope.claim(
-      view.methodName,
-      `operation "${op.operation.name}"`,
-      op.operation,
-    )
-      ? [view]
-      : [];
+    if (
+      !methodScope.claim(
+        view.methodName,
+        `operation "${op.operation.name}"`,
+        op.operation,
+      )
+    ) {
+      return [];
+    }
+    operationOf.set(view, op.operation);
+    return [view];
   });
 
   const view: RefitInterfaceView = {
@@ -605,9 +620,22 @@ export function buildInterface(
   };
   let body = renderer.renderRefitInterface(view);
 
-  const pagingMethods = methods
-    .map((m) => m.paging)
-    .filter((p): p is PagingMethodView => p !== undefined);
+  // A wrapper is an extension method, so one named like a method of the interface
+  // (`listAll` next to a paged `list`) would never be called. The operation keeps its
+  // method and the wrapper is left out.
+  const rawNames = new Set(methods.map((m) => m.methodName));
+  const pagingMethods = methods.flatMap((m) => {
+    if (!m.paging) return [];
+    if (rawNames.has(m.paging.methodName)) {
+      reportUnsupportedPaging(
+        program,
+        operationOf.get(m)!,
+        `a wrapper name, ${m.paging.methodName}, that another operation's method already uses`,
+      );
+      return [];
+    }
+    return [m.paging];
+  });
   const nextLinkPagingMethod = pagingMethods.find(
     (p) => p.strategy === "nextLink",
   );
@@ -635,14 +663,7 @@ export function buildInterface(
         ...(pagingMethods.length > 0
           ? ["System.Runtime.CompilerServices"]
           : []),
-        ...(nextLinkPagingMethod
-          ? [
-              "Microsoft.Extensions.Http",
-              "System",
-              "System.Net.Http",
-              "System.Net.Http.Json",
-            ]
-          : []),
+        ...(nextLinkPagingMethod ? ["System.Net.Http"] : []),
         ...additionalUsings,
       ]),
     ]),
@@ -889,10 +910,7 @@ function buildMethodView(
         ? "Rfc7231"
         : undefined);
 
-    // Headers are the only binding a `nextLink`-strategy paging wrapper has to
-    // replay by hand, since following nextLink bypasses Refit entirely (query
-    // params are presumed already baked into the opaque nextLink URL).
-    const headerName = param.type === "header" ? param.name : undefined;
+    let replay: ParamInfo["replay"];
 
     if (param.type === "query") {
       const isArray =
@@ -944,14 +962,12 @@ function buildMethodView(
       }
       if (wire) attributes.push(encodedAttribute(wire));
     } else if (param.type === "header" || param.type === "cookie") {
-      const prefix =
-        param.type === "header"
-          ? "ClientRuntime.HeaderPrefix"
-          : "ClientRuntime.CookiePrefix";
+      const prefix = param.type === "header" ? "HeaderPrefix" : "CookiePrefix";
       attributes.push(
-        `${fx("Property", "attribute")}(${prefix} + "${escapeCsString(param.name)}")`,
+        `${fx("Property", "attribute")}(ClientRuntime.${prefix} + "${escapeCsString(param.name)}")`,
       );
       if (wire) attributes.push(encodedAttribute(wire));
+      replay = { prefix, name: param.name, wire };
     }
 
     const plainDeclaration = `${csType}${nullableSuffix} ${csParam}${isOptional ? " = null" : ""}`;
@@ -961,7 +977,7 @@ function buildMethodView(
       declaration: decl,
       plainDeclaration,
       property: param.param,
-      headerName,
+      replay,
     };
     (isOptional ? optionalParams : requiredParams).push(info);
   }
@@ -1111,6 +1127,7 @@ function buildMethodView(
     csNs,
     doc,
     response ? withoutNullable(response.type) : undefined,
+    response?.type.endsWith("?") ?? false,
   );
 
   return {
@@ -1524,6 +1541,7 @@ function numericDefaultLiteral(property: ModelProperty): string | undefined {
  *   happens to declare `@pageItems`/`@nextLink`. `undefined` (an operation with
  *   no response body) can't reach here, since `getPagingOperation` wouldn't
  *   have resolved a `pageItems` role in the first place.
+ * @param pageNullable - Whether the raw method can return no page (a bodyless success).
  * @returns The paging wrapper view, or `undefined` when the operation isn't
  *   `@list`, carries no usable paging metadata, or resolves to an unsupported shape
  *   (in which case a diagnostic has already been reported).
@@ -1541,6 +1559,7 @@ function buildPagingMethodView(
   csNs: string,
   doc: string | undefined,
   rawResponseType: string | undefined,
+  pageNullable: boolean,
 ): PagingMethodView | undefined {
   if (!isList(program, operation)) return undefined;
 
@@ -1619,6 +1638,7 @@ function buildPagingMethodView(
   const itemVarName = uniqueLocalName("item", taken);
 
   const commonDeclarations = allParams.map((p) => p.plainDeclaration);
+  const cancellationDeclaration = `[${fx("EnumeratorCancellation", "attribute")}] ${fx("CancellationToken")} cancellationToken = default`;
 
   const base: Pick<
     PagingMethodView,
@@ -1627,6 +1647,7 @@ function buildPagingMethodView(
     | "rawMethodName"
     | "itemType"
     | "pageType"
+    | "pageNullable"
     | "itemsPropertyName"
     | "receiverVarName"
     | "pageVarName"
@@ -1637,6 +1658,7 @@ function buildPagingMethodView(
     rawMethodName,
     itemType,
     pageType,
+    pageNullable,
     itemsPropertyName,
     receiverVarName,
     pageVarName,
@@ -1656,20 +1678,29 @@ function buildPagingMethodView(
     const nextLinkPropertyName = toCsPropName(
       getClientName(program, nextLink.property) ?? nextLink.property.name,
     );
-    usedHelpers.add(PAGING_JSON_OPTIONS_HELPER_NAME);
+    const nextLinkIsString =
+      mapPropertyType(
+        nextLink.property,
+        program,
+        models,
+        enums,
+        usedHelpers,
+      ).replace(/\?$/, "") === "string";
 
-    // Headers (and only headers — query params are presumed already baked
-    // into the opaque nextLink URL by the server, per the usual nextLink
-    // contract) must be replayed by hand on every continuation request: it
-    // bypasses Refit entirely, so none of the raw method's [Header] bindings
-    // (auth, tenant, API-version, ...) would otherwise reach page two onward.
-    const headerParams = allParams
-      .filter((p): p is ParamInfo & { headerName: string } => !!p.headerName)
-      .map((p) => ({
-        paramName: p.name,
-        headerName: p.headerName,
-        optional: p.property?.optional ?? true,
-      }));
+    // Query parameters are presumed to be baked into the link by the server, as the
+    // nextLink contract has it; headers and cookies are not, so they are replayed.
+    const replayOptions = allParams.flatMap((p) =>
+      p.replay
+        ? [
+            {
+              key: `ClientRuntime.${p.replay.prefix} + "${escapeCsString(p.replay.name)}"`,
+              value: p.replay.wire
+                ? `ClientRuntime.Encode(${p.name}, ClientRuntime.WireEncoding.${p.replay.wire})`
+                : p.name,
+            },
+          ]
+        : [],
+    );
 
     const httpClientFactoryVarName = uniqueLocalName(
       "httpClientFactory",
@@ -1680,21 +1711,24 @@ function buildPagingMethodView(
       strategy: "nextLink",
       paramsDeclaration: [
         `this ${csName} ${receiverVarName}`,
-        `IHttpClientFactory ${httpClientFactoryVarName}`,
+        `${fx("IHttpClientFactory")} ${httpClientFactoryVarName}`,
         ...commonDeclarations,
-        "[EnumeratorCancellation] CancellationToken cancellationToken = default",
+        cancellationDeclaration,
       ].join(", "),
       callArgNames: [...allParams.map((p) => p.name), "cancellationToken"],
       nextLinkPropertyName,
+      nextLinkIsString,
       httpClientName: `${csNs}.${csName}`,
       httpClientFactoryVarName,
       httpClientVarName: uniqueLocalName("httpClient", taken),
+      baseAddressVarName: uniqueLocalName("baseAddress", taken),
+      serializerVarName: uniqueLocalName("serializer", taken),
       nextLinkVarName: uniqueLocalName("nextLink", taken),
+      nextUriVarName: uniqueLocalName("nextUri", taken),
       requestVarName: uniqueLocalName("request", taken),
       responseVarName: uniqueLocalName("response", taken),
       nextPageVarName: uniqueLocalName("nextPage", taken),
-      sameOriginVarName: uniqueLocalName("sameOrigin", taken),
-      headerParams,
+      replayOptions,
     };
   }
 
@@ -1720,6 +1754,24 @@ function buildPagingMethodView(
       );
       return undefined;
     }
+    // The loop seeds, refreshes, and ends on the token as a string; a token typed as a
+    // `Guid` or `Uri` (`@format("uuid")`) would not compile there.
+    const isString = (property: ModelProperty): boolean =>
+      mapPropertyType(property, program, models, enums, usedHelpers).replace(
+        /\?$/,
+        "",
+      ) === "string";
+    if (
+      !isString(continuationToken.property) ||
+      !isString(inputToken!.property)
+    ) {
+      reportUnsupportedPaging(
+        program,
+        operation,
+        "a continuationToken that is not a string on both the request and the response",
+      );
+      return undefined;
+    }
     const continuationTokenPropertyName = toCsPropName(
       getClientName(program, continuationToken.property) ??
         continuationToken.property.name,
@@ -1731,7 +1783,7 @@ function buildPagingMethodView(
       paramsDeclaration: [
         `this ${csName} ${receiverVarName}`,
         ...commonDeclarations,
-        "[EnumeratorCancellation] CancellationToken cancellationToken = default",
+        cancellationDeclaration,
       ].join(", "),
       callArgNames: [
         ...allParams.map((p) => (p === inputParam ? tokenVarName : p.name)),
@@ -1804,7 +1856,7 @@ function buildPagingMethodView(
       paramsDeclaration: [
         `this ${csName} ${receiverVarName}`,
         ...commonDeclarations,
-        "[EnumeratorCancellation] CancellationToken cancellationToken = default",
+        cancellationDeclaration,
       ].join(", "),
       counterCsType,
       callArgNames: [

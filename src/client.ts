@@ -93,7 +93,6 @@ export function buildExtensions(
     interfaces,
   };
   const body = renderer.renderExtensions(view);
-  const needsPagingJsonOptions = interfaces.some((i) => i.pagingHttpClientName);
   const fileView: FileView = {
     namespace: csNs,
     usings: sortUsings([
@@ -102,7 +101,6 @@ export function buildExtensions(
         "Refit",
         "System",
         "System.Net.Http",
-        ...(needsPagingJsonOptions ? ["System.Text.Json"] : []),
         ...additionalUsings,
       ]),
     ]),

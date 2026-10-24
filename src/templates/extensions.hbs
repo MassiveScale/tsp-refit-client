@@ -28,9 +28,9 @@
     .docParamName         —   the same name in XML documentation, never escaped, e.g. "params"
     .access               —   "public" or "internal"; the property's access modifier
     .pagingHttpClientName —   set only for an interface with a nextLink-strategy
-                              paging wrapper, to the interface's own name again
-                              (e.g. "IStores"); registers a named HttpClient and
-                              matching RefitSettings so the wrapper's
+                              paging wrapper, to the interface's namespace-qualified
+                              name (e.g. "Acme.Api.Client.IStores"); registers the
+                              interface's HttpClient under that name so the wrapper's
                               IHttpClientFactory.CreateClient(...) call resolves
                               to the same client Refit itself uses
 
@@ -182,7 +182,7 @@ public static class {{className}}
         if (services is null) throw new ArgumentNullException(nameof(services));
         if (configureHttpClient is null) throw new ArgumentNullException(nameof(configureHttpClient));
 
-{{#each interfaces}}{{#if pagingHttpClientName}}        AddEndpoint<{{name}}>(services, configureHttpClient, configureBuilder, "{{pagingHttpClientName}}", new RefitSettings(new SystemTextJsonContentSerializer(RefitJsonOptions.Default)));
+{{#each interfaces}}{{#if pagingHttpClientName}}        AddEndpoint<{{name}}>(services, configureHttpClient, configureBuilder, "{{pagingHttpClientName}}");
 {{else}}        AddEndpoint<{{name}}>(services, configureHttpClient, configureBuilder);
 {{/if}}{{/each}}        services.AddTransient(serviceProvider => new {{clientClassName}}({{#each interfaces}}serviceProvider.GetRequiredService<{{name}}>(){{#unless @last}}, {{/unless}}{{/each}}));
         return services;
@@ -196,22 +196,20 @@ public static class {{className}}
     /// <param name="configureHttpClient">Configures the interface's <see cref="HttpClient"/>.</param>
     /// <param name="configureBuilder">Optional further configuration of the interface's <see cref="IHttpClientBuilder"/>.</param>
     /// <param name="httpClientName">
-    /// Optional. Registers the interface's <see cref="HttpClient"/> under this name instead of an
-    /// unnamed one, so an <see cref="IHttpClientFactory"/> consumer (a `nextLink`-strategy paging
-    /// wrapper) can resolve the exact same client Refit itself uses.
+    /// Optional. Registers the interface's <see cref="HttpClient"/> under this name, so a paging
+    /// wrapper that follows next-page links can resolve the same client, with the same
+    /// configuration and handlers, from <see cref="IHttpClientFactory"/>.
     /// </param>
-    /// <param name="settings">Optional. Overrides <see cref="ClientRuntime.CreateSettings"/> for this interface.</param>
     private static void AddEndpoint<T>(
         IServiceCollection services,
         Action<HttpClient> configureHttpClient,
         Func<IHttpClientBuilder, IHttpClientBuilder>? configureBuilder,
-        string? httpClientName = null,
-        RefitSettings? settings = null) where T : class
+        string? httpClientName = null) where T : class
     {
         // The wire handler is added first, so it is the outermost handler: anything the caller
         // adds sees the headers and body it has written.
         var builder = services
-            .AddRefitClient<T>(settings ?? ClientRuntime.CreateSettings(), httpClientName)
+            .AddRefitClient<T>(ClientRuntime.CreateSettings(), httpClientName)
             .ConfigureHttpClient(configureHttpClient)
             .AddHttpMessageHandler(() => ClientRuntime.CreateHandler());
         configureBuilder?.Invoke(builder);

@@ -56,14 +56,6 @@ export const MERGE_PATCH_INTERFACE_NAME = "IMergePatch";
 export const CLIENT_RUNTIME_HELPER_NAME = "ClientRuntime";
 
 /**
- * C# name of the shared `JsonSerializerOptions` helper emitted alongside the
- * models when a `nextLink`-strategy paging wrapper is generated. Passed both to
- * the paginated interface's `AddRefitClient` registration and to the wrapper's
- * manual continuation-page deserialization, so the two can never drift apart.
- */
-export const PAGING_JSON_OPTIONS_HELPER_NAME = "RefitJsonOptions";
-
-/**
  * Accumulator recording which hand-written helper classes the mapped types depend
  * on, so the emitter knows which helper files it has to write. Threaded alongside
  * the `models` / `enums` accumulators.
