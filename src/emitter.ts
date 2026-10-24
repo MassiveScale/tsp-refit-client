@@ -77,6 +77,7 @@ import {
   declarationKey,
   MERGE_PATCH_HELPER_NAME,
   MERGE_PATCH_INTERFACE_NAME,
+  PAGING_JSON_OPTIONS_HELPER_NAME,
   type UsedHelpers,
   setProjection,
   csTemplateParameterName,
@@ -764,26 +765,27 @@ async function emitService(
         continue;
       }
       const access = getAccess(program, container) ?? "public";
-      endpointNames.push({ interfaceName, access });
+      const { content, pagingHttpClientName } = buildInterface(
+        interfaceName,
+        endpointNs,
+        vOps,
+        docText(program, container),
+        access,
+        program,
+        models,
+        enums,
+        usedHelpers,
+        version,
+        requestTypes,
+        renderer,
+        rawRoutePrefix,
+        additionalUsings,
+      );
+      endpointNames.push({ interfaceName, access, pagingHttpClientName });
       await writeFile(
         program,
         resolvePath(dir, "Endpoints", `${interfaceName}.g.cs`),
-        buildInterface(
-          interfaceName,
-          endpointNs,
-          vOps,
-          docText(program, container),
-          access,
-          program,
-          models,
-          enums,
-          usedHelpers,
-          version,
-          requestTypes,
-          renderer,
-          rawRoutePrefix,
-          additionalUsings,
-        ),
+        content,
       );
     }
     // The runtime helpers are needed by every service. MergePatch is only needed
@@ -804,6 +806,12 @@ async function emitService(
         `the ${MERGE_PATCH_INTERFACE_NAME} interface of the ${MERGE_PATCH_HELPER_NAME} helper`,
         NoTarget,
       );
+    }
+    // Only needed when a `nextLink`-strategy paging wrapper was actually
+    // generated; `continuationToken`/`offset`/`pageIndex`-strategy wrappers
+    // need no shared JSON options, since they go through the raw Refit method.
+    if (usedHelpers.has(PAGING_JSON_OPTIONS_HELPER_NAME)) {
+      neededHelpers.push(PAGING_JSON_OPTIONS_HELPER_NAME);
     }
     for (const helper of neededHelpers) {
       if (

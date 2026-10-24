@@ -22,11 +22,17 @@
   {{methodName}}      — name of the public registration method, e.g. "AddApiClient"
 
   {{interfaces}}      — array of interface entry objects. Each has:
-    .name             —   C# interface name, e.g. "IPets"
-    .propertyName     —   property name on the aggregate client, e.g. "Pets"
-    .paramName        —   constructor parameter name as written in C#, e.g. "pets" or "@params"
-    .docParamName     —   the same name in XML documentation, never escaped, e.g. "params"
-    .access           —   "public" or "internal"; the property's access modifier
+    .name                 —   C# interface name, e.g. "IPets"
+    .propertyName         —   property name on the aggregate client, e.g. "Pets"
+    .paramName            —   constructor parameter name as written in C#, e.g. "pets" or "@params"
+    .docParamName         —   the same name in XML documentation, never escaped, e.g. "params"
+    .access               —   "public" or "internal"; the property's access modifier
+    .pagingHttpClientName —   set only for an interface with a nextLink-strategy
+                              paging wrapper, to the interface's own name again
+                              (e.g. "IStores"); registers a named HttpClient and
+                              matching RefitSettings so the wrapper's
+                              IHttpClientFactory.CreateClient(...) call resolves
+                              to the same client Refit itself uses
 
   {{constructorAccess}} — "public", or "internal" when any endpoint is internal,
                         because a public constructor cannot take an internal type
@@ -176,8 +182,9 @@ public static class {{className}}
         if (services is null) throw new ArgumentNullException(nameof(services));
         if (configureHttpClient is null) throw new ArgumentNullException(nameof(configureHttpClient));
 
-{{#each interfaces}}        AddEndpoint<{{name}}>(services, configureHttpClient, configureBuilder);
-{{/each}}        services.AddTransient(serviceProvider => new {{clientClassName}}({{#each interfaces}}serviceProvider.GetRequiredService<{{name}}>(){{#unless @last}}, {{/unless}}{{/each}}));
+{{#each interfaces}}{{#if pagingHttpClientName}}        AddEndpoint<{{name}}>(services, configureHttpClient, configureBuilder, "{{pagingHttpClientName}}", new RefitSettings(new SystemTextJsonContentSerializer(RefitJsonOptions.Default)));
+{{else}}        AddEndpoint<{{name}}>(services, configureHttpClient, configureBuilder);
+{{/if}}{{/each}}        services.AddTransient(serviceProvider => new {{clientClassName}}({{#each interfaces}}serviceProvider.GetRequiredService<{{name}}>(){{#unless @last}}, {{/unless}}{{/each}}));
         return services;
     }
 
@@ -188,15 +195,23 @@ public static class {{className}}
     /// <param name="services">The service collection.</param>
     /// <param name="configureHttpClient">Configures the interface's <see cref="HttpClient"/>.</param>
     /// <param name="configureBuilder">Optional further configuration of the interface's <see cref="IHttpClientBuilder"/>.</param>
+    /// <param name="httpClientName">
+    /// Optional. Registers the interface's <see cref="HttpClient"/> under this name instead of an
+    /// unnamed one, so an <see cref="IHttpClientFactory"/> consumer (a `nextLink`-strategy paging
+    /// wrapper) can resolve the exact same client Refit itself uses.
+    /// </param>
+    /// <param name="settings">Optional. Overrides <see cref="ClientRuntime.CreateSettings"/> for this interface.</param>
     private static void AddEndpoint<T>(
         IServiceCollection services,
         Action<HttpClient> configureHttpClient,
-        Func<IHttpClientBuilder, IHttpClientBuilder>? configureBuilder) where T : class
+        Func<IHttpClientBuilder, IHttpClientBuilder>? configureBuilder,
+        string? httpClientName = null,
+        RefitSettings? settings = null) where T : class
     {
         // The wire handler is added first, so it is the outermost handler: anything the caller
         // adds sees the headers and body it has written.
         var builder = services
-            .AddRefitClient<T>(ClientRuntime.CreateSettings())
+            .AddRefitClient<T>(settings ?? ClientRuntime.CreateSettings(), httpClientName)
             .ConfigureHttpClient(configureHttpClient)
             .AddHttpMessageHandler(() => ClientRuntime.CreateHandler());
         configureBuilder?.Invoke(builder);

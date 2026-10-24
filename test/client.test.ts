@@ -135,7 +135,9 @@ describe("client", () => {
     const content = results["TestApiClientExtensions.g.cs"];
     ok(content, "Expected TestApiClientExtensions.g.cs");
     ok(
-      content.includes(".AddRefitClient<T>(ClientRuntime.CreateSettings())"),
+      content.includes(
+        ".AddRefitClient<T>(settings ?? ClientRuntime.CreateSettings(), httpClientName)",
+      ),
       "Expected the interface registered with the runtime's Refit settings",
     );
     ok(
@@ -220,6 +222,32 @@ describe("client", () => {
         ": base(global::Refit.RestService.For<IPets>(httpClient, settings), global::Refit.RestService.For<IStores>(httpClient, settings))",
       ),
       "Expected Create to build every interface with the shared HttpClient and settings",
+    );
+  });
+
+  it("registers a non-paginated interface's call site exactly as before, with no extra arguments", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `);
+
+    const extFile = Object.keys(results).find((k) =>
+      k.endsWith("TestApiClientExtensions.g.cs"),
+    );
+    ok(extFile, "Expected TestApiClientExtensions.g.cs");
+    ok(
+      results[extFile].includes(
+        "AddEndpoint<IItems>(services, configureHttpClient, configureBuilder);",
+      ),
+      "Expected the plain, no-extra-arguments call site unchanged by the paging feature",
     );
   });
 });

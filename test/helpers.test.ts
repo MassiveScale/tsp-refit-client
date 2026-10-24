@@ -225,13 +225,18 @@ describe("helper files", () => {
 
 describe("helpers module", () => {
   it("lists every helper, with the runtime always emitted", () => {
-    deepStrictEqual([...ALL_HELPERS].sort(), ["ClientRuntime", "MergePatch"]);
+    deepStrictEqual([...ALL_HELPERS].sort(), [
+      "ClientRuntime",
+      "MergePatch",
+      "RefitJsonOptions",
+    ]);
     deepStrictEqual([...ALWAYS_EMITTED_HELPERS], ["ClientRuntime"]);
   });
 
   it("puts the merge-patch builder with the models and the rest under Infrastructure", () => {
     strictEqual(helperFolder("MergePatch"), "Models");
     strictEqual(helperFolder("ClientRuntime"), "Infrastructure");
+    strictEqual(helperFolder("RefitJsonOptions"), "Infrastructure");
   });
 
   it("sorts and de-duplicates the usings it writes", () => {

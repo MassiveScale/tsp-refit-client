@@ -13,6 +13,10 @@ import {
   Type,
   Program,
   isArrayModelType,
+  Operation,
+  getPagingOperation,
+  isList,
+  type PagingProperty,
 } from "@typespec/compiler";
 import {
   HttpOperation,
@@ -30,6 +34,8 @@ import {
   MethodView,
   PayloadKind,
   FileView,
+  PagingMethodView,
+  PagingStrategy,
 } from "./renderer.js";
 import { getClientName, getAccess } from "./decorators.js";
 import { checkName, MemberScope } from "./names.js";
@@ -48,6 +54,7 @@ import {
   builtinScalarName,
   capitalize,
   toCsMethodName,
+  toCsPagingMethodName,
   toCsParamName,
   escapeCsIdentifier,
   unwrapType,
@@ -58,7 +65,9 @@ import {
   soleVariant,
   MERGE_PATCH_HELPER_NAME,
   MERGE_PATCH_INTERFACE_NAME,
+  PAGING_JSON_OPTIONS_HELPER_NAME,
   type UsedHelpers,
+  toCsPropName,
 } from "./utils.js";
 import {
   findDiscriminatedRoot,
@@ -145,6 +154,26 @@ export function requestSubstitute(
     requestType.writes.has(model)
       ? requestRecordName(program, model, requestType.suffix)
       : undefined;
+}
+
+/**
+ * One already-rendered method parameter, tracked alongside its source
+ * `ModelProperty` (when it has one) so paging codegen can later identify which
+ * parameter corresponds to a paging input role (`continuationToken`/`offset`/
+ * `pageIndex`) without re-deriving names from scratch. Body parameters and the
+ * synthetic `additionalQueryParameters` bag have no source property.
+ */
+interface ParamInfo {
+  /** C# parameter name, e.g. `"skip"`. */
+  name: string;
+  /** Full parameter declaration text for the raw Refit method, e.g. `"[AliasAs(\"$skip\")] int? skip = null"`. */
+  declaration: string;
+  /** Same declaration with any Refit binding attribute (`[Query]`/`[Header]`/`[Body]`/`[AliasAs]`) stripped, e.g. `"int? skip = null"` — for the paging wrapper, a plain static method Refit never sees. */
+  plainDeclaration: string;
+  /** The TypeSpec property this parameter was derived from, if any. */
+  property?: ModelProperty;
+  /** The wire header name, when this parameter is bound via `[Header("...")]` — needed to replay it on a `nextLink` continuation request, which bypasses Refit (and so would otherwise silently drop it). */
+  headerName?: string;
 }
 
 /**
@@ -514,7 +543,11 @@ export function buildRoute(
  * @param additionalUsings - Extra `using` directives from the `additional-usings`
  *   option, appended to every emitted file regardless of whether this particular
  *   file references anything from them (see `EmitterOptions["additional-usings"]`).
- * @returns The full C# source of the generated interface file.
+ * @returns The full C# source of the generated interface file, plus whether any
+ *   of its operations produced a `nextLink`-strategy paging wrapper, and if so
+ *   the exact (namespace-qualified) named `HttpClient` it resolves — the only
+ *   strategy that needs a named `HttpClient`/`RefitSettings` registration —
+ *   so the caller can register that same client under that same name.
  */
 export function buildInterface(
   csName: string,
@@ -531,7 +564,7 @@ export function buildInterface(
   renderer: Renderer,
   rawRoutePrefix: string,
   additionalUsings: Set<string>,
-): string {
+): { content: string; pagingHttpClientName?: string } {
   const routePrefix = resolveRoutePrefix(rawRoutePrefix, version);
   // `read` and `Read` both become `ReadAsync`, which C# would reject as a duplicate
   // member (or an ambiguous overload), so the second is reported and left out.
@@ -551,6 +584,8 @@ export function buildInterface(
       version,
       requestTypes,
       routePrefix,
+      csName,
+      csNs,
     );
     if (!view) return [];
     return methodScope.claim(
@@ -568,7 +603,26 @@ export function buildInterface(
     access,
     methods,
   };
-  const file: FileView = {
+  let body = renderer.renderRefitInterface(view);
+
+  const pagingMethods = methods
+    .map((m) => m.paging)
+    .filter((p): p is PagingMethodView => p !== undefined);
+  const nextLinkPagingMethod = pagingMethods.find(
+    (p) => p.strategy === "nextLink",
+  );
+  if (pagingMethods.length > 0) {
+    body +=
+      "\n" +
+      renderer.renderPagingExtensions({
+        interfaceName: csName,
+        className: `${csName}PagingExtensions`,
+        access,
+        methods: pagingMethods,
+      });
+  }
+
+  const fileView: FileView = {
     namespace: csNs,
     usings: sortUsings([
       ...new Set([
@@ -578,13 +632,27 @@ export function buildInterface(
         "System.Text.Json",
         "System.Threading",
         "System.Threading.Tasks",
+        ...(pagingMethods.length > 0
+          ? ["System.Runtime.CompilerServices"]
+          : []),
+        ...(nextLinkPagingMethod
+          ? [
+              "Microsoft.Extensions.Http",
+              "System",
+              "System.Net.Http",
+              "System.Net.Http.Json",
+            ]
+          : []),
         ...additionalUsings,
       ]),
     ]),
-    body: renderer.renderRefitInterface(view),
+    body,
     fileName: `${csName}.g.cs`,
   };
-  return renderer.renderFile(file);
+  return {
+    content: renderer.renderFile(fileView),
+    pagingHttpClientName: nextLinkPagingMethod?.httpClientName,
+  };
 }
 
 /**
@@ -681,6 +749,12 @@ function isDateTime(type: Type): boolean {
  * @param version - The API version being emitted, or `undefined` when unversioned.
  * @param requestTypes - Accumulator for synthesized request payload types.
  * @param routePrefix - The already-resolved route prefix for this version.
+ * @param csName - Enclosing interface's C# name (e.g. `IStores`), needed only to
+ *   stamp a `nextLink`-strategy paging wrapper's `CreateClient(...)` call.
+ * @param csNs - Enclosing interface's C# namespace, combined with `csName` into
+ *   the named `HttpClient` a `nextLink`-strategy paging wrapper resolves, so
+ *   two different services or API versions that both happen to declare an
+ *   `IStores` interface don't collide on the same registered client name.
  * @returns The {@link MethodView} for the operation, or `undefined` when the
  *   operation uses something this emitter cannot send or read correctly (it is
  *   reported, and left out, rather than generated with the wrong behaviour).
@@ -694,6 +768,8 @@ function buildMethodView(
   version: Version | undefined,
   requestTypes: Map<string, RequestType>,
   routePrefix: string,
+  csName: string,
+  csNs: string,
 ): MethodView | undefined {
   const reportUnsupported = (feature: string): undefined => {
     reportOnce(
@@ -728,8 +804,8 @@ function buildMethodView(
   );
   registerErrorModels(op.responses, program, models, enums, usedHelpers);
 
-  const requiredParams: string[] = [];
-  const optionalParams: string[] = [];
+  const requiredParams: ParamInfo[] = [];
+  const optionalParams: ParamInfo[] = [];
   const headers: string[] = [];
   const roundTrip = new Set<string>();
 
@@ -813,6 +889,11 @@ function buildMethodView(
         ? "Rfc7231"
         : undefined);
 
+    // Headers are the only binding a `nextLink`-strategy paging wrapper has to
+    // replay by hand, since following nextLink bypasses Refit entirely (query
+    // params are presumed already baked into the opaque nextLink URL).
+    const headerName = param.type === "header" ? param.name : undefined;
+
     if (param.type === "query") {
       const isArray =
         param.param.type.kind === "Model" &&
@@ -828,8 +909,15 @@ function buildMethodView(
           `${fx("Property", "attribute")}(ClientRuntime.QueryPrefix + "${escapeCsString(param.name)}")`,
         );
         if (wire) attributes.push(encodedAttribute(wire));
-        const decl = `${attributes.map((a) => `[${a}] `).join("")}${csType}${nullableSuffix} ${csParam}${isOptional ? " = null" : ""}`;
-        (isOptional ? optionalParams : requiredParams).push(decl);
+        const plainDeclaration = `${csType}${nullableSuffix} ${csParam}${isOptional ? " = null" : ""}`;
+        const decl = `${attributes.map((a) => `[${a}] `).join("")}${plainDeclaration}`;
+        const info: ParamInfo = {
+          name: csParam,
+          declaration: decl,
+          plainDeclaration,
+          property: param.param,
+        };
+        (isOptional ? optionalParams : requiredParams).push(info);
         continue;
       }
       if (param.name !== unescaped) {
@@ -866,8 +954,16 @@ function buildMethodView(
       if (wire) attributes.push(encodedAttribute(wire));
     }
 
-    const decl = `${attributes.map((a) => `[${a}] `).join("")}${csType}${nullableSuffix} ${csParam}${isOptional ? " = null" : ""}`;
-    (isOptional ? optionalParams : requiredParams).push(decl);
+    const plainDeclaration = `${csType}${nullableSuffix} ${csParam}${isOptional ? " = null" : ""}`;
+    const decl = `${attributes.map((a) => `[${a}] `).join("")}${plainDeclaration}`;
+    const info: ParamInfo = {
+      name: csParam,
+      declaration: decl,
+      plainDeclaration,
+      property: param.param,
+      headerName,
+    };
+    (isOptional ? optionalParams : requiredParams).push(info);
   }
 
   if (op.parameters.body) {
@@ -969,24 +1065,53 @@ function buildMethodView(
     if (wire) attributes.push(encodedAttribute(wire));
     // `@body body?: Widget` may be left out, in which case no body is sent at all.
     const optionalBody = bodyInfo.property?.optional === true;
-    const decl = `${attributes.map((a) => `[${a}] `).join("")}${
-      optionalBody
-        ? `${bodyType.endsWith("?") ? bodyType : `${bodyType}?`} body = null`
-        : `${bodyType} body`
-    }`;
+    const bodyPlainDeclaration = optionalBody
+      ? `${bodyType.endsWith("?") ? bodyType : `${bodyType}?`} body = null`
+      : `${bodyType} body`;
+    const bodyDecl = `${attributes.map((a) => `[${a}] `).join("")}${bodyPlainDeclaration}`;
+    const bodyParamInfo: ParamInfo = {
+      name: "body",
+      declaration: bodyDecl,
+      plainDeclaration: bodyPlainDeclaration,
+      property: bodyInfo.property,
+    };
     if (optionalBody) {
-      optionalParams.unshift(decl);
+      optionalParams.unshift(bodyParamInfo);
     } else {
-      requiredParams.push(decl);
+      requiredParams.push(bodyParamInfo);
     }
   }
 
+  // Lets callers append arbitrary query parameters not declared in the TypeSpec
+  // contract (e.g. feature flags, tracing params) to any generated call.
+  const additionalQueryParamPlainDeclaration = `${fx("Dictionary", "generic")}<string, object>? additionalQueryParameters = null`;
+  const additionalQueryParam: ParamInfo = {
+    name: "additionalQueryParameters",
+    declaration: `[${fx("Query", "attribute")}] ${additionalQueryParamPlainDeclaration}`,
+    plainDeclaration: additionalQueryParamPlainDeclaration,
+  };
+  optionalParams.push(additionalQueryParam);
+
+  const allParams = [...requiredParams, ...optionalParams];
   const params = [
-    ...requiredParams,
-    ...optionalParams,
-    `[${fx("Query", "attribute")}] ${fx("Dictionary", "generic")}<string, object>? additionalQueryParameters = null`,
+    ...allParams.map((p) => p.declaration),
     `${fx("CancellationToken")} cancellationToken = default`,
   ];
+
+  const paging = buildPagingMethodView(
+    op.operation,
+    program,
+    models,
+    enums,
+    usedHelpers,
+    allParams,
+    baseMethodName,
+    methodName,
+    csName,
+    csNs,
+    doc,
+    response ? withoutNullable(response.type) : undefined,
+  );
 
   return {
     doc,
@@ -1004,6 +1129,7 @@ function buildMethodView(
       ? `${fx("Task", "generic")}<${response.type}>`
       : fx("Task"),
     paramsText: params.join(", "),
+    paging,
   };
 }
 /**
@@ -1290,6 +1416,413 @@ function resolveResponse(
  */
 function withoutNullable(csType: string): string {
   return csType.endsWith("?") ? csType.slice(0, -1) : csType;
+}
+
+/**
+ * Reports the `unsupported-paging-style` warning for an operation whose
+ * `@list` paging metadata doesn't resolve to a strategy this emitter can
+ * generate a wrapper for. The raw single-page method is still generated.
+ *
+ * @param program - The compiler program, used to report the diagnostic.
+ * @param operation - The `@list` operation.
+ * @param reason - Human-readable explanation, interpolated into the message.
+ */
+function reportUnsupportedPaging(
+  program: Program,
+  operation: Operation,
+  reason: string,
+): void {
+  program.reportDiagnostic(
+    createDiagnostic({
+      code: "unsupported-paging-style",
+      target: operation,
+      format: { operationName: operation.name, reason },
+    }),
+  );
+}
+
+/** Whether a resolved paging role lives directly on the page model rather than a nested sub-object. */
+function isFlatPagingProperty(p: PagingProperty): boolean {
+  return p.path.length <= 1;
+}
+
+/**
+ * Picks a local variable name that collides with neither an already-taken name
+ * (the operation's own forwarded parameters, or an earlier local allocated in
+ * the same method) nor, after this call, any later one — generated loop bodies
+ * reference these names verbatim, so a real collision (a parameter named
+ * `token`, `page`, or `count`, all plausible TypeSpec identifiers) would
+ * otherwise produce self-referential or outright non-compiling C#.
+ *
+ * @param base - The preferred name, e.g. `"page"`.
+ * @param taken - Names already in scope; mutated to also claim the result.
+ * @returns `base`, or `base` suffixed with the first free number starting at 2.
+ */
+function uniqueLocalName(base: string, taken: Set<string>): string {
+  let candidate = base;
+  for (let n = 2; taken.has(candidate); n++) {
+    candidate = `${base}${n}`;
+  }
+  taken.add(candidate);
+  return candidate;
+}
+
+/**
+ * The C# numeric literal of a parameter's declared TypeSpec default
+ * (`@query @pageIndex pageIndex?: int32 = 1` → `"1"`), when it has one.
+ *
+ * Only a paging wrapper's own synthesized counter-seed expression consults
+ * this — the raw method's own parameter still defaults to plain C# `null`
+ * either way (letting Refit omit it from the request so the server applies
+ * its own default), since that convention is unrelated to what starting
+ * number *this* generated loop should assume when the caller omits the
+ * parameter entirely.
+ *
+ * @param property - The operation parameter.
+ * @returns The literal text, or `undefined` when there is no numeric default.
+ */
+function numericDefaultLiteral(property: ModelProperty): string | undefined {
+  const value = property.defaultValue;
+  return value?.valueKind === "NumericValue"
+    ? value.value.toString()
+    : undefined;
+}
+
+/**
+ * Builds the {@link PagingMethodView} for an operation, when its `@list`
+ * paging metadata resolves to a supported forward-iteration strategy.
+ *
+ * Detection follows the TypeSpec core pagination metadata exclusively —
+ * `@list` + `getPagingOperation` — never a bespoke decorator or an assumed
+ * field-naming convention, since this emitter is a public library with no tie
+ * to any one organization's API shape.
+ *
+ * Priority when a page model exposes more than one forward-iteration signal is
+ * `nextLink` > `continuationToken` > `offset`/`pageIndex`, since `nextLink` is
+ * the most self-contained (the URL already embeds everything the next request
+ * needs). `prevLink`/`firstLink`/`lastLink` are backward/random-access links,
+ * not forward-iteration drivers, and never influence this selection — they
+ * still render as ordinary model properties via the ordinary record codegen.
+ *
+ * @param operation - The TypeSpec operation (only consulted for `@list`/paging metadata).
+ * @param program - The compiler program.
+ * @param models - Accumulator for referenced named models (see {@link mapType}).
+ * @param enums - Accumulator for referenced named enums (see {@link mapType}).
+ * @param usedHelpers - Accumulator for required helper classes (see {@link mapType}).
+ * @param allParams - The raw method's full, ordered parameter list (required then optional).
+ * @param baseMethodName - The TypeSpec-derived base operation name (e.g. `"list"`).
+ * @param rawMethodName - The raw single-page method's C# name (e.g. `"ListAsync"`).
+ * @param csName - Enclosing interface's C# name, used only by the `nextLink` strategy.
+ * @param csNs - Enclosing interface's C# namespace, used only by the `nextLink`
+ *   strategy, to qualify the named `HttpClient` so it can't collide with an
+ *   identically-named interface in a different service or API version.
+ * @param doc - The operation's doc comment (already unescaped), carried onto the wrapper.
+ * @param rawResponseType - The raw method's own resolved response body type
+ *   (e.g. `"PagedResult<Store>"`), reused verbatim as the `nextLink` strategy's
+ *   continuation-page type, so it can never drift from whatever the raw method
+ *   itself actually returns — regardless of which model in an inheritance chain
+ *   happens to declare `@pageItems`/`@nextLink`. `undefined` (an operation with
+ *   no response body) can't reach here, since `getPagingOperation` wouldn't
+ *   have resolved a `pageItems` role in the first place.
+ * @returns The paging wrapper view, or `undefined` when the operation isn't
+ *   `@list`, carries no usable paging metadata, or resolves to an unsupported shape
+ *   (in which case a diagnostic has already been reported).
+ */
+function buildPagingMethodView(
+  operation: Operation,
+  program: Program,
+  models: Map<string, Model>,
+  enums: Map<string, Enum>,
+  usedHelpers: UsedHelpers,
+  allParams: ParamInfo[],
+  baseMethodName: string,
+  rawMethodName: string,
+  csName: string,
+  csNs: string,
+  doc: string | undefined,
+  rawResponseType: string | undefined,
+): PagingMethodView | undefined {
+  if (!isList(program, operation)) return undefined;
+
+  const [pagingOp] = getPagingOperation(program, operation);
+  // `pagingOp` undefined means the operation is missing `@pageItems`; the
+  // compiler's own `validatePagingOperations` pass already reported that.
+  if (!pagingOp) return undefined;
+
+  if (!isFlatPagingProperty(pagingOp.output.pageItems)) {
+    reportUnsupportedPaging(
+      program,
+      operation,
+      "a nested paging property (not declared directly on the page response model)",
+    );
+    return undefined;
+  }
+
+  const pageItemsProp = pagingOp.output.pageItems.property;
+  if (pageItemsProp.optional) {
+    reportUnsupportedPaging(
+      program,
+      operation,
+      "an optional (nullable) @pageItems array, which the generated loop cannot safely enumerate when the server omits it",
+    );
+    return undefined;
+  }
+  const itemsArrayModel = pageItemsProp.type as Model;
+  const itemType = mapType(
+    itemsArrayModel.indexer!.value,
+    program,
+    models,
+    enums,
+    usedHelpers,
+  );
+  const itemsPropertyName = toCsPropName(
+    getClientName(program, pageItemsProp) ?? pageItemsProp.name,
+  );
+
+  // The page type is the raw method's own resolved response type, never
+  // re-derived from wherever `@pageItems` happens to be declared: those can be
+  // different models when paging properties are split across an inheritance
+  // hierarchy, and only the operation's actual response type is guaranteed to
+  // carry every paging property this function goes on to read off of it. An
+  // anonymous or otherwise unmappable response maps to plain "object", which
+  // has no `.Items`/`.Next`/etc. members to read — generating against it would
+  // produce C# that cannot compile, so it's rejected outright instead. This
+  // also, as a side effect, covers a paging property bound to a response
+  // header rather than the JSON body: `@typespec/http` synthesizes an
+  // anonymous implicit body for whatever's left over whenever any response
+  // property is pulled out as a header, so `rawResponseType` is already
+  // "object" by the time such a case would reach here — no separate check needed.
+  const pageType = rawResponseType ?? "object";
+  if (pageType === "object") {
+    reportUnsupportedPaging(
+      program,
+      operation,
+      `an anonymous or unmappable page response type (there is no named C# type to read .${itemsPropertyName} from)`,
+    );
+    return undefined;
+  }
+
+  const methodName = toCsPagingMethodName(baseMethodName);
+
+  // Every local identifier the generated loop body introduces must avoid
+  // colliding with a forwarded parameter name — a realistic TypeSpec operation
+  // can plausibly declare a parameter literally named "token", "page", or
+  // "count" — and with each other, hence the single shared `taken` set and
+  // sequential allocation below (each call also claims its own result).
+  const taken = new Set(allParams.map((p) => p.name));
+  taken.add("cancellationToken");
+  // The extension-method receiver ("this {Interface} client") is itself a
+  // generated identifier just like `page`/`item`/etc., and just as capable of
+  // colliding with a real TypeSpec parameter named "client".
+  const receiverVarName = uniqueLocalName("client", taken);
+  const pageVarName = uniqueLocalName("page", taken);
+  const itemVarName = uniqueLocalName("item", taken);
+
+  const commonDeclarations = allParams.map((p) => p.plainDeclaration);
+
+  const base: Pick<
+    PagingMethodView,
+    | "doc"
+    | "methodName"
+    | "rawMethodName"
+    | "itemType"
+    | "pageType"
+    | "itemsPropertyName"
+    | "receiverVarName"
+    | "pageVarName"
+    | "itemVarName"
+  > = {
+    doc,
+    methodName,
+    rawMethodName,
+    itemType,
+    pageType,
+    itemsPropertyName,
+    receiverVarName,
+    pageVarName,
+    itemVarName,
+  };
+
+  const nextLink = pagingOp.output.nextLink;
+  if (nextLink) {
+    if (!isFlatPagingProperty(nextLink)) {
+      reportUnsupportedPaging(
+        program,
+        operation,
+        "a nested paging property (not declared directly on the page response model)",
+      );
+      return undefined;
+    }
+    const nextLinkPropertyName = toCsPropName(
+      getClientName(program, nextLink.property) ?? nextLink.property.name,
+    );
+    usedHelpers.add(PAGING_JSON_OPTIONS_HELPER_NAME);
+
+    // Headers (and only headers — query params are presumed already baked
+    // into the opaque nextLink URL by the server, per the usual nextLink
+    // contract) must be replayed by hand on every continuation request: it
+    // bypasses Refit entirely, so none of the raw method's [Header] bindings
+    // (auth, tenant, API-version, ...) would otherwise reach page two onward.
+    const headerParams = allParams
+      .filter((p): p is ParamInfo & { headerName: string } => !!p.headerName)
+      .map((p) => ({
+        paramName: p.name,
+        headerName: p.headerName,
+        optional: p.property?.optional ?? true,
+      }));
+
+    const httpClientFactoryVarName = uniqueLocalName(
+      "httpClientFactory",
+      taken,
+    );
+    return {
+      ...base,
+      strategy: "nextLink",
+      paramsDeclaration: [
+        `this ${csName} ${receiverVarName}`,
+        `IHttpClientFactory ${httpClientFactoryVarName}`,
+        ...commonDeclarations,
+        "[EnumeratorCancellation] CancellationToken cancellationToken = default",
+      ].join(", "),
+      callArgNames: [...allParams.map((p) => p.name), "cancellationToken"],
+      nextLinkPropertyName,
+      httpClientName: `${csNs}.${csName}`,
+      httpClientFactoryVarName,
+      httpClientVarName: uniqueLocalName("httpClient", taken),
+      nextLinkVarName: uniqueLocalName("nextLink", taken),
+      requestVarName: uniqueLocalName("request", taken),
+      responseVarName: uniqueLocalName("response", taken),
+      nextPageVarName: uniqueLocalName("nextPage", taken),
+      sameOriginVarName: uniqueLocalName("sameOrigin", taken),
+      headerParams,
+    };
+  }
+
+  const continuationToken = pagingOp.output.continuationToken;
+  if (continuationToken) {
+    if (!isFlatPagingProperty(continuationToken)) {
+      reportUnsupportedPaging(
+        program,
+        operation,
+        "a nested paging property (not declared directly on the page response model)",
+      );
+      return undefined;
+    }
+    const inputToken = pagingOp.input.continuationToken;
+    const inputParam = inputToken
+      ? allParams.find((p) => p.property === inputToken.property)
+      : undefined;
+    if (!inputParam) {
+      reportUnsupportedPaging(
+        program,
+        operation,
+        "a continuationToken output with no matching input parameter to feed it back into",
+      );
+      return undefined;
+    }
+    const continuationTokenPropertyName = toCsPropName(
+      getClientName(program, continuationToken.property) ??
+        continuationToken.property.name,
+    );
+    const tokenVarName = uniqueLocalName("token", taken);
+    return {
+      ...base,
+      strategy: "continuationToken",
+      paramsDeclaration: [
+        `this ${csName} ${receiverVarName}`,
+        ...commonDeclarations,
+        "[EnumeratorCancellation] CancellationToken cancellationToken = default",
+      ].join(", "),
+      callArgNames: [
+        ...allParams.map((p) => (p === inputParam ? tokenVarName : p.name)),
+        "cancellationToken",
+      ],
+      continuationTokenPropertyName,
+      continuationTokenSeedExpression: inputParam.name,
+      tokenVarName,
+    };
+  }
+
+  const offsetInput = pagingOp.input.offset;
+  const pageIndexInput = pagingOp.input.pageIndex;
+  const counterInput = offsetInput ?? pageIndexInput;
+  const counterStrategy:
+    Extract<PagingStrategy, "offset" | "pageIndex"> | undefined = offsetInput
+    ? "offset"
+    : pageIndexInput
+      ? "pageIndex"
+      : undefined;
+  if (counterInput && counterStrategy) {
+    if (!isFlatPagingProperty(counterInput)) {
+      reportUnsupportedPaging(
+        program,
+        operation,
+        "a nested paging property (not declared directly on the operation's parameters)",
+      );
+      return undefined;
+    }
+    const inputParam = allParams.find(
+      (p) => p.property === counterInput.property,
+    );
+    if (!inputParam) {
+      reportUnsupportedPaging(
+        program,
+        operation,
+        `an ${counterStrategy} input parameter that could not be matched to a generated method parameter`,
+      );
+      return undefined;
+    }
+    const counterVarName = uniqueLocalName(
+      counterStrategy === "offset" ? "currentOffset" : "currentPageIndex",
+      taken,
+    );
+    const countVarName = uniqueLocalName("count", taken);
+    // When the caller omits the parameter, the raw method's own C# parameter
+    // still defaults to plain `null` (so Refit leaves it off the wire and the
+    // server applies its own default) — but *this* generated loop needs a
+    // concrete number to start counting from regardless, so it falls back to
+    // the parameter's declared TypeSpec default when it has one (honoring,
+    // say, a documented 1-based `pageIndex`), and to 0 only otherwise.
+    const counterSeedExpression = counterInput.property.optional
+      ? `${inputParam.name} ?? ${numericDefaultLiteral(counterInput.property) ?? "0"}`
+      : inputParam.name;
+    // The per-page item count is always a plain `int`, but the counter can be
+    // any integer scalar the author declared (`@offset offset: uint64`, for
+    // instance) — C# has no built-in `+=` between an unrelated integer type
+    // and a non-constant `int`, so `offset`'s advance step casts the count to
+    // match (`pageIndex`'s `++` needs no such cast; it works on any numeric type).
+    const counterCsType = mapPropertyType(
+      counterInput.property,
+      program,
+      models,
+      enums,
+      usedHelpers,
+    );
+    return {
+      ...base,
+      strategy: counterStrategy,
+      paramsDeclaration: [
+        `this ${csName} ${receiverVarName}`,
+        ...commonDeclarations,
+        "[EnumeratorCancellation] CancellationToken cancellationToken = default",
+      ].join(", "),
+      counterCsType,
+      callArgNames: [
+        ...allParams.map((p) => (p === inputParam ? counterVarName : p.name)),
+        "cancellationToken",
+      ],
+      counterVarName,
+      counterSeedExpression,
+      countVarName,
+    };
+  }
+
+  reportUnsupportedPaging(
+    program,
+    operation,
+    "no recognized forward-iteration signal (prevLink/firstLink/lastLink and pageSize alone don't drive iteration)",
+  );
+  return undefined;
 }
 
 /**

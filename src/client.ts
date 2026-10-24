@@ -16,6 +16,14 @@ export interface EndpointName {
   interfaceName: string;
   /** C# access modifier of the interface: `"public"` or `"internal"`. */
   access: string;
+  /**
+   * Set (already namespace-qualified, e.g. `"My.Api.Client.IStores"`) only
+   * when this interface has at least one `nextLink`-strategy paging wrapper,
+   * which needs a named `HttpClient`/`RefitSettings` registration under that
+   * exact name. Interfaces using only the `continuationToken`/`offset`/
+   * `pageIndex` strategies, or no paging at all, leave this unset.
+   */
+  pagingHttpClientName?: string;
 }
 
 /**
@@ -28,7 +36,9 @@ export interface EndpointName {
  * @param csNs - C# namespace the generated file is emitted into.
  * @param endpoints - The Refit interfaces to register, and their access; each interface maps to a client property/parameter with the leading
  *   `I` stripped. An internal interface becomes an internal property, and any internal
- *   interface makes the aggregate client's constructor internal.
+ *   interface makes the aggregate client's constructor internal. `pagingHttpClientName`
+ *   marks an interface that needs a named `HttpClient`/`RefitSettings` registration for
+ *   its `nextLink`-strategy paging wrapper(s), registered under that exact name.
  * @param renderer - Handlebars renderer used to produce the file contents.
  * @param runtimeNamespace - The C# namespace of the `ClientRuntime` helper, which
  *   the aggregate client names in full so an endpoint property cannot hide it.
@@ -51,7 +61,7 @@ export function buildExtensions(
   // the case of their first letter would declare the same parameter twice (CS0100).
   const takenParams = new Set<string>();
   const interfaces: InterfaceEntry[] = endpoints.map(
-    ({ interfaceName, access }) => {
+    ({ interfaceName, access, pagingHttpClientName }) => {
       const propertyName = interfaceName.startsWith("I")
         ? interfaceName.slice(1)
         : interfaceName;
@@ -67,6 +77,7 @@ export function buildExtensions(
         paramName: escapeCsIdentifier(unescaped),
         docParamName: unescaped,
         access,
+        pagingHttpClientName,
       };
     },
   );
@@ -75,13 +86,14 @@ export function buildExtensions(
     methodName,
     clientClassName,
     // A public constructor cannot take an internal parameter type (CS0051).
-    constructorAccess: interfaces.some((i) => i.access !== "public")
+    constructorAccess: endpoints.some((i) => i.access !== "public")
       ? "internal"
       : "public",
     runtimeNamespace,
     interfaces,
   };
   const body = renderer.renderExtensions(view);
+  const needsPagingJsonOptions = interfaces.some((i) => i.pagingHttpClientName);
   const fileView: FileView = {
     namespace: csNs,
     usings: sortUsings([
@@ -90,6 +102,7 @@ export function buildExtensions(
         "Refit",
         "System",
         "System.Net.Http",
+        ...(needsPagingJsonOptions ? ["System.Text.Json"] : []),
         ...additionalUsings,
       ]),
     ]),

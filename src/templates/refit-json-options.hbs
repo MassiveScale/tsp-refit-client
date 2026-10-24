@@ -1,0 +1,31 @@
+{{!--
+  refit-json-options.hbs — static helper emitted once per project into
+  `Infrastructure/`, but only when at least one generated `nextLink`-strategy
+  paging wrapper exists (i.e. the generated code has to manually deserialize a
+  continuation page outside of Refit).
+
+  The same options instance is passed both to the paginated interface's
+  `AddRefitClient` registration (via `RefitSettings`) and to the wrapper's
+  manual `ReadFromJsonAsync` call, so the two deserialization paths can never
+  drift apart.
+
+  Override via tspconfig.yaml:
+    options:
+      "@massivescale/tsp-refit-client":
+        templates:
+          refit-json-options: "./templates/refit-json-options.hbs"
+
+  Template variables:
+
+  (none — this template renders a fully static class body)
+
+--}}
+/// <summary>
+/// Shared <see cref="JsonSerializerOptions"/> used both for Refit's own (de)serialization
+/// and for manually deserializing nextLink continuation pages, so the two stay in sync.
+/// </summary>
+public static class RefitJsonOptions
+{
+    /// <summary>The shared options instance.</summary>
+    public static readonly JsonSerializerOptions Default = new(JsonSerializerDefaults.Web);
+}

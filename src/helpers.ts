@@ -6,17 +6,21 @@ import { Renderer, FileView } from "./renderer.js";
 import {
   CLIENT_RUNTIME_HELPER_NAME,
   MERGE_PATCH_HELPER_NAME,
+  PAGING_JSON_OPTIONS_HELPER_NAME,
   sortUsings,
 } from "./utils.js";
 
 /** Names of the helper types the emitter can write. Also the base name of each helper's file. */
 export type HelperName =
-  typeof MERGE_PATCH_HELPER_NAME | typeof CLIENT_RUNTIME_HELPER_NAME;
+  | typeof MERGE_PATCH_HELPER_NAME
+  | typeof CLIENT_RUNTIME_HELPER_NAME
+  | typeof PAGING_JSON_OPTIONS_HELPER_NAME;
 
 /** Every helper, in the order they are written. */
 export const ALL_HELPERS: readonly HelperName[] = [
   CLIENT_RUNTIME_HELPER_NAME,
   MERGE_PATCH_HELPER_NAME,
+  PAGING_JSON_OPTIONS_HELPER_NAME,
 ];
 
 /** The helpers every service needs, as opposed to the ones raised by type mapping. */
@@ -57,6 +61,7 @@ const HELPER_USINGS: Record<HelperName, string[]> = {
     "System.Threading.Tasks",
     "System.Xml",
   ],
+  [PAGING_JSON_OPTIONS_HELPER_NAME]: ["System.Text.Json"],
 };
 
 /**
@@ -82,6 +87,8 @@ function renderHelperBody(name: HelperName, renderer: Renderer): string {
       return renderer.renderMergePatch();
     case CLIENT_RUNTIME_HELPER_NAME:
       return renderer.renderClientRuntime();
+    case PAGING_JSON_OPTIONS_HELPER_NAME:
+      return renderer.renderRefitJsonOptionsHelper();
   }
 }
 

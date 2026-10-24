@@ -208,6 +208,18 @@ const EmitterOptionsSchema: JSONSchemaType<EmitterOptions> = {
           description:
             "ClientRuntime template: the Refit settings, message handler, and wire-format helpers shared by every Refit interface.",
         },
+        "paging-extensions": {
+          type: "string",
+          nullable: true,
+          description:
+            "Static class template holding an interface's generated auto-paginating IAsyncEnumerable<T> wrapper method(s), emitted only when at least one `@list` operation resolves to a supported paging strategy.",
+        },
+        "refit-json-options": {
+          type: "string",
+          nullable: true,
+          description:
+            "Shared JsonSerializerOptions helper template, emitted only when a nextLink-strategy paging wrapper is generated.",
+        },
       },
       required: [],
     },
@@ -304,6 +316,12 @@ export const $lib = createTypeSpecLibrary({
       messages: {
         default: paramMessage`Generated file name collision for "${"name"}.g.cs": ${"first"} and ${"second"}.`,
         case: paramMessage`Generated file names "${"firstName"}.g.cs" and "${"name"}.g.cs" differ only in case, which is the same file on Windows and macOS: ${"first"} and ${"second"}. Give one of them another name with @clientName.`,
+      },
+    },
+    "unsupported-paging-style": {
+      severity: "warning",
+      messages: {
+        default: paramMessage`Operation "${"operationName"}" uses a paging style not supported by this emitter (${"reason"}); only the raw single-page method was generated.`,
       },
     },
   },

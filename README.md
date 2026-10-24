@@ -361,6 +361,7 @@ A request or success response that cannot be sent or read correctly is reported 
 - A `@discriminator` model that is also a variant of another discriminated model (a nested discriminator). `System.Text.Json` can resolve only one discriminator per hierarchy. Reported as `unsupported-nested-discriminator`. A grouping model with no discriminator of its own (`model Dog extends Animal {}`) is fine.
 - `@encode` values the client cannot honour (see the encodings table). Reported as `unsupported-encoding`.
 - Streaming responses such as server-sent events are read in full before the call returns.
+- A `@list` operation whose paging metadata doesn't resolve to a supported forward-iteration strategy — a paging role nested inside a sub-object instead of declared directly, an optional `@pageItems` array, a `continuationToken` output with no matching input parameter, an anonymous/unmappable page response type, or no `nextLink`/`continuationToken`/`offset`/`pageIndex` signal at all. Reported as `unsupported-paging-style`; the raw single-page method is still generated.
 
 ### Merge-patch request bodies
 
@@ -405,6 +406,39 @@ Every method also takes a plain JSON wire name (`patch.Set("displayName", "…")
 The expression form only accepts a property read straight off the lambda parameter, because a merge patch is a flat map of the model's own JSON properties. Something nested like `w => w.Name.Length` throws `ArgumentException` rather than quietly sending a `"Length"` field the server has never heard of. To patch inside a nested object, `Set` the whole object.
 
 > **Note:** this is the client-side counterpart to the `MergePatch<T>` emitted by `@massivescale/tsp-aspnetcore-api`. That one is built for _reading_ a patch in a controller; this one is built for _writing_ one. If your solution references both generated projects, the two types live in different namespaces and do not conflict, but don't `using` both into the same file.
+
+### Pagination
+
+An operation decorated `@list`, whose response declares `@pageItems`, gets a second generated method alongside the raw single-page one: an `IAsyncEnumerable<T>` extension method that transparently follows every page. Detection uses TypeSpec's own core pagination decorators — `@list`, `@pageItems`, `@nextLink`, `@continuationToken`, `@offset`, `@pageIndex` — never an assumed field-naming convention, so it works with any API that follows the TypeSpec paging model.
+
+```typespec
+model PagedResult<T> {
+  @pageItems items: T[];
+  @nextLink next?: url;
+}
+
+@route("/stores")
+interface Stores {
+  @list @get list(skip?: int32, take?: int32): PagedResult<Store>;
+}
+```
+
+```csharp
+await foreach (var store in client.Stores.ListAllAsync(httpClientFactory, cancellationToken: ct))
+{
+    // one Store per iteration, across every page
+}
+```
+
+| Strategy                          | How the wrapper advances                                                                                 | Extra parameter          |
+|------------------------------------|-----------------------------------------------------------------------------------------------------------|---------------------------|
+| `@nextLink`                        | Follows the response's opaque next-page URL via a raw, named `HttpClient`, bypassing Refit for continuation requests. | `IHttpClientFactory`      |
+| `@continuationToken`               | Re-calls the raw Refit method, feeding the previous response's token back into the matching input parameter. | none                      |
+| `@offset` / `@pageIndex`           | Re-calls the raw Refit method with the counter advanced by the received item count (`offset`) or by one (`pageIndex`); stops on an empty page. | none                      |
+
+When more than one signal is present on a page model, `nextLink` wins over `continuationToken`, which wins over `offset`/`pageIndex` — `nextLink` is the most self-contained, since the URL already embeds everything the next request needs. `prevLink`/`firstLink`/`lastLink` are backward/random-access links, not forward-iteration drivers, and render as ordinary model properties with no special codegen.
+
+Only the `nextLink` strategy needs the extra `IHttpClientFactory` parameter and a named `HttpClient`/`RefitSettings` registration (wired up automatically in the DI extension method); the `continuationToken` and `offset`/`pageIndex` strategies call straight through the existing Refit interface and need nothing extra.
 
 ## Multiple API versions
 

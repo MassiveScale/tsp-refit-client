@@ -202,7 +202,11 @@ describe("dependency injection registration", () => {
         "AddEndpoint<IStores>(services, configureHttpClient, configureBuilder);",
       ),
     );
-    ok(content.includes(".AddRefitClient<T>(ClientRuntime.CreateSettings())"));
+    ok(
+      content.includes(
+        ".AddRefitClient<T>(settings ?? ClientRuntime.CreateSettings(), httpClientName)",
+      ),
+    );
     ok(content.includes(".ConfigureHttpClient(configureHttpClient)"));
     ok(
       content.includes(
