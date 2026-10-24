@@ -764,26 +764,35 @@ async function emitService(
         continue;
       }
       const access = getAccess(program, container) ?? "public";
-      endpointNames.push({ interfaceName, access });
+      const { content, pagingHttpClientName } = buildInterface(
+        interfaceName,
+        endpointNs,
+        vOps,
+        docText(program, container),
+        access,
+        program,
+        models,
+        enums,
+        usedHelpers,
+        version,
+        requestTypes,
+        renderer,
+        rawRoutePrefix,
+        additionalUsings,
+        (className) =>
+          tryReserveModelOutputName(
+            program,
+            modelOutputOwners,
+            className,
+            `the ${className} paging extensions class`,
+            NoTarget,
+          ),
+      );
+      endpointNames.push({ interfaceName, access, pagingHttpClientName });
       await writeFile(
         program,
         resolvePath(dir, "Endpoints", `${interfaceName}.g.cs`),
-        buildInterface(
-          interfaceName,
-          endpointNs,
-          vOps,
-          docText(program, container),
-          access,
-          program,
-          models,
-          enums,
-          usedHelpers,
-          version,
-          requestTypes,
-          renderer,
-          rawRoutePrefix,
-          additionalUsings,
-        ),
+        content,
       );
     }
     // The runtime helpers are needed by every service. MergePatch is only needed

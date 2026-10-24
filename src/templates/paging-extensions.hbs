@@ -1,0 +1,35 @@
+{{!--
+  paging-extensions.hbs — one generated per interface that has at least one
+  `@list` operation resolving to a supported paging strategy (`nextLink`,
+  `continuationToken`, or `offset`/`pageIndex`). Appended into the same file as
+  the Refit interface itself, right after it.
+
+  Each method is a `static` extension method on the Refit interface, since a
+  Refit interface can't carry injected dependencies of its own — this lets the
+  wrapper be called the same way whether you hold the Refit interface directly
+  or go through the aggregate client (e.g. `apiClient.Stores.ListAllAsync(...)`).
+
+  Override via tspconfig.yaml:
+    options:
+      "@massivescale/tsp-refit-client":
+        templates:
+          paging-extensions: "./templates/paging-extensions.hbs"
+
+  Template variables:
+
+  {{interfaceName}} — the Refit interface these methods extend, e.g. "IStores"
+
+  {{className}}     — name of the static extensions class, e.g. "IStoresPagingExtensions"
+
+  {{access}}        — C# access modifier: "public" or "internal" (matches the interface's own)
+
+  {{methodsBlock}}  — pre-rendered string containing all paging wrapper method declarations
+
+--}}
+/// <summary>
+/// Auto-paginating convenience methods for <see cref="{{interfaceName}}"/>.
+/// </summary>
+{{access}} static class {{className}}
+{
+{{{methodsBlock}}}
+}

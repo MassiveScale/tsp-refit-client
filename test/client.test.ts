@@ -222,4 +222,46 @@ describe("client", () => {
       "Expected Create to build every interface with the shared HttpClient and settings",
     );
   });
+
+  it("registers a non-paginated interface's call site exactly as before, with no extra arguments", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `);
+
+    const extFile = Object.keys(results).find((k) =>
+      k.endsWith("TestApiClientExtensions.g.cs"),
+    );
+    ok(extFile, "Expected TestApiClientExtensions.g.cs");
+    ok(
+      results[extFile].includes(
+        "AddEndpoint<IItems>(services, configureHttpClient, configureBuilder);",
+      ),
+      "Expected the plain, no-extra-arguments call site unchanged by the paging feature",
+    );
+  });
+
+  it("leaves out the continuation client helper when no interface follows next links", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `);
+    ok(!results["TestApiClientExtensions.g.cs"].includes("AddNextLinkClient"));
+  });
 });

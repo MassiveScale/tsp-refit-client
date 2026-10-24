@@ -77,6 +77,7 @@ describe("the published package", () => {
       "extensions.hbs",
       "file.hbs",
       "merge-patch.hbs",
+      "paging-extensions.hbs",
       "record.hbs",
       "refit-interface.hbs",
     ]);

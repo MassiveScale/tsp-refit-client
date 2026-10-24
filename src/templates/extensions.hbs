@@ -27,6 +27,12 @@
     .paramName        —   constructor parameter name as written in C#, e.g. "pets" or "@params"
     .docParamName     —   the same name in XML documentation, never escaped, e.g. "params"
     .access           —   "public" or "internal"; the property's access modifier
+    .pagingHttpClientName — set only for an interface with a nextLink paging wrapper:
+                        the name of the HttpClient the wrapper sends continuation
+                        requests through, e.g. "Acme.Api.Client.IStores.NextLinks"
+
+  {{hasNextLinkPaging}} — whether any interface has a nextLink paging wrapper, which
+                        adds the private AddNextLinkClient helper
 
   {{constructorAccess}} — "public", or "internal" when any endpoint is internal,
                         because a public constructor cannot take an internal type
@@ -177,7 +183,8 @@ public static class {{className}}
         if (configureHttpClient is null) throw new ArgumentNullException(nameof(configureHttpClient));
 
 {{#each interfaces}}        AddEndpoint<{{name}}>(services, configureHttpClient, configureBuilder);
-{{/each}}        services.AddTransient(serviceProvider => new {{clientClassName}}({{#each interfaces}}serviceProvider.GetRequiredService<{{name}}>(){{#unless @last}}, {{/unless}}{{/each}}));
+{{#if pagingHttpClientName}}        AddNextLinkClient(services, "{{pagingHttpClientName}}", configureHttpClient, configureBuilder);
+{{/if}}{{/each}}        services.AddTransient(serviceProvider => new {{clientClassName}}({{#each interfaces}}serviceProvider.GetRequiredService<{{name}}>(){{#unless @last}}, {{/unless}}{{/each}}));
         return services;
     }
 
@@ -201,4 +208,30 @@ public static class {{className}}
             .AddHttpMessageHandler(() => ClientRuntime.CreateHandler());
         configureBuilder?.Invoke(builder);
     }
+{{#if hasNextLinkPaging}}
+
+    /// <summary>
+    /// Registers the client a paging wrapper sends next-page requests through: configured like the
+    /// interface's own, but not following redirects, so the wrapper can check every redirect's origin
+    /// before following it. A primary handler set through <paramref name="configureBuilder"/> replaces
+    /// this one.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="name">The client's name, which the paging wrapper resolves.</param>
+    /// <param name="configureHttpClient">Configures the <see cref="HttpClient"/>.</param>
+    /// <param name="configureBuilder">Optional further configuration of the <see cref="IHttpClientBuilder"/>.</param>
+    private static void AddNextLinkClient(
+        IServiceCollection services,
+        string name,
+        Action<HttpClient> configureHttpClient,
+        Func<IHttpClientBuilder, IHttpClientBuilder>? configureBuilder)
+    {
+        var builder = services
+            .AddHttpClient(name)
+            .ConfigureHttpClient(configureHttpClient)
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+            .AddHttpMessageHandler(() => ClientRuntime.CreateHandler());
+        configureBuilder?.Invoke(builder);
+    }
+{{/if}}
 }

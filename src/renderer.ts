@@ -33,7 +33,8 @@ export type TemplateName =
   | "csproj"
   | "extensions"
   | "merge-patch"
-  | "client-runtime";
+  | "client-runtime"
+  | "paging-extensions";
 
 /**
  * Partial map of template names to absolute file paths used to override the
@@ -177,6 +178,131 @@ export interface MethodView {
   returnType: string;
   /** Pre-rendered comma-separated parameter list, attributes included. */
   paramsText: string;
+  /** Present when this operation is `@list` and resolves to a supported paging strategy; drives the sibling `IAsyncEnumerable<T>` wrapper method. */
+  paging?: PagingMethodView;
+}
+
+/**
+ * Which forward-iteration signal a paging wrapper method follows. Priority when
+ * a page model exposes more than one is `nextLink` > `continuationToken` >
+ * `offset`/`pageIndex`.
+ */
+export type PagingStrategy =
+  "nextLink" | "continuationToken" | "offset" | "pageIndex";
+
+/**
+ * View model for a single generated `IAsyncEnumerable<T>` auto-paginating
+ * wrapper method. Carries pre-built, strategy-appropriate text fragments
+ * (parameter declarations, call argument names) so the renderer only has to
+ * assemble the loop shape for `strategy`, not re-derive naming decisions.
+ */
+export interface PagingMethodView {
+  /** Optional XML doc text (pre-escaped), carried over from the TypeSpec operation. */
+  doc?: string;
+  /** Which forward-iteration signal this method follows. */
+  strategy: PagingStrategy;
+  /** Wrapper method name, e.g. `"ListAllAsync"`. */
+  methodName: string;
+  /** The Refit interface the raw method belongs to, e.g. `"IStores"`. */
+  interfaceName: string;
+  /** The raw single-page method this wrapper calls, e.g. `"ListAsync"`. */
+  rawMethodName: string;
+  /** C# type of a single page item, e.g. `"Store"`. */
+  itemType: string;
+  /** C# type of the page response model, e.g. `"PagedResult<Store>"`. Used only by the `nextLink` strategy, to type the manually-deserialized continuation page. */
+  pageType: string;
+  /**
+   * Whether the raw method can return no page at all, e.g. for `PagedResult<Store> | void`,
+   * whose bodyless success comes back as `null`. Every strategy then stops on a `null` page
+   * instead of dereferencing it.
+   */
+  pageNullable: boolean;
+  /** PascalCase name of the page model's items-array property, e.g. `"Items"`. */
+  itemsPropertyName: string;
+  /** Pre-joined parameter list for the method signature, including the leading `this {Interface} client` receiver and a trailing `[EnumeratorCancellation] CancellationToken`. */
+  paramsDeclaration: string;
+  /** Ordered argument names to call {@link rawMethodName} with; the paging input parameter (if any) is already substituted for its loop-local variable name. */
+  callArgNames: string[];
+  /**
+   * Collision-free local variable name for the first page (every strategy),
+   * e.g. `"page"` — or `"page2"` when the operation already has a parameter
+   * named `page`.
+   */
+  pageVarName: string;
+  /** Collision-free local variable name for the `foreach` loop item (every strategy), e.g. `"item"`. */
+  itemVarName: string;
+  /**
+   * Collision-free name for the extension method's own receiver parameter
+   * (`this {Interface} {receiverVarName}`, every strategy), e.g. `"client"` —
+   * or `"client2"` when the operation already has a parameter named `client`.
+   */
+  receiverVarName: string;
+  /** `nextLink` strategy only: PascalCase name of the page model's next-link property, e.g. `"Next"`. */
+  nextLinkPropertyName?: string;
+  /** `nextLink` strategy only: whether the next-link property is a `string` rather than a `Uri`, so an empty string also ends the loop. */
+  nextLinkIsString?: boolean;
+  /** `nextLink` strategy only: the named `HttpClient` to resolve via `IHttpClientFactory.CreateClient(...)`, qualified with the interface's C# namespace so it can't collide with an identically-named interface registered by a different service or API version. */
+  httpClientName?: string;
+  /** `nextLink` strategy only: collision-free name for the `IHttpClientFactory` parameter. */
+  httpClientFactoryVarName?: string;
+  /** `nextLink` strategy only: collision-free local variable name for the resolved `HttpClient`. */
+  httpClientVarName?: string;
+  /** `nextLink` strategy only: collision-free local variable name for the current next-link URL. */
+  nextLinkVarName?: string;
+  /** `nextLink` strategy only: collision-free local variable name for the manually-built continuation `HttpRequestMessage`. */
+  requestVarName?: string;
+  /** `nextLink` strategy only: collision-free local variable name for the continuation `HttpResponseMessage`. */
+  responseVarName?: string;
+  /** `nextLink` strategy only: collision-free local variable name for the deserialized continuation page. */
+  nextPageVarName?: string;
+  /** `nextLink` strategy only: collision-free local variable name for the client's base address. */
+  baseAddressVarName?: string;
+  /** `nextLink` strategy only: collision-free local variable name for the next link resolved against the base address. */
+  nextUriVarName?: string;
+  /** `nextLink` strategy only: collision-free local variable name for the content serializer that reads continuation pages. */
+  serializerVarName?: string;
+  /** `nextLink` strategy only: collision-free local variable name for the count of redirects followed. */
+  redirectsVarName?: string;
+  /** `nextLink` strategy only: collision-free local variable name for a redirect's target. */
+  locationVarName?: string;
+  /**
+   * `nextLink` strategy only: the raw method's header and cookie parameters, replayed on
+   * every continuation request as the same request options the raw method sets, so the
+   * runtime's message handler writes them in the same wire format. Following nextLink
+   * bypasses Refit, so they would otherwise not reach page two onward.
+   */
+  replayOptions?: {
+    /** C# expression of the option key, e.g. `ClientRuntime.HeaderPrefix + "X-Tenant-Id"`. */
+    key: string;
+    /** C# expression of the option value, with the parameter's `@encode` applied. */
+    value: string;
+  }[];
+  /** `continuationToken` strategy only: PascalCase name of the page model's continuation-token output property, e.g. `"ContinuationToken"`. */
+  continuationTokenPropertyName?: string;
+  /** `continuationToken` strategy only: expression seeding the local token variable, e.g. `"continuationToken"`. */
+  continuationTokenSeedExpression?: string;
+  /** `continuationToken` strategy only: collision-free local variable name for the token. */
+  tokenVarName?: string;
+  /** `offset` / `pageIndex` strategy only: collision-free local loop variable name, e.g. `"currentOffset"`. */
+  counterVarName?: string;
+  /** `offset` / `pageIndex` strategy only: expression seeding the local counter variable, e.g. `"offset ?? 0"` or `"pageIndex"` (no fallback needed when the parameter is required). */
+  counterSeedExpression?: string;
+  /** `offset` / `pageIndex` strategy only: collision-free local variable name for the per-page item count. */
+  countVarName?: string;
+  /** `offset` / `pageIndex` strategy only: the counter's own mapped C# type (e.g. `"ulong"`), used to cast the (always-`int`) per-page item count before adding it — C# has no built-in `+=` between an unrelated integer type and a non-constant `int`. */
+  counterCsType?: string;
+}
+
+/** View model for the generated `{Interface}PagingExtensions` static class. */
+export interface PagingExtensionsView {
+  /** The Refit interface these methods extend, e.g. `"IStores"`. */
+  interfaceName: string;
+  /** Name of the static extensions class, e.g. `"IStoresPagingExtensions"`. */
+  className: string;
+  /** C# access modifier: `"public"` (default) or `"internal"`. Matches the interface's own access. */
+  access: string;
+  /** Ordered list of paging wrapper methods. */
+  methods: PagingMethodView[];
 }
 
 /** View model for a Refit `public interface` declaration. */
@@ -214,6 +340,11 @@ export interface InterfaceEntry {
   docParamName: string;
   /** C# access modifier of the property: the interface's own, `"public"` or `"internal"`. */
   access: string;
+  /**
+   * Set only when this interface has a `nextLink`-strategy paging wrapper: the name of the
+   * `HttpClient` it sends continuation requests through, which the extensions class registers.
+   */
+  pagingHttpClientName?: string;
 }
 
 /** View model for the generated aggregate client class and DI registration extension class. */
@@ -230,6 +361,8 @@ export interface ExtensionsView {
   runtimeNamespace: string;
   /** Ordered list of Refit interface entries. */
   interfaces: InterfaceEntry[];
+  /** Whether any interface has a nextLink paging wrapper, which needs its continuation client registered. */
+  hasNextLinkPaging: boolean;
 }
 /** View model for the generated `.csproj` project file. */
 export interface CsprojView {
@@ -274,6 +407,8 @@ export interface Renderer {
   renderMergePatch(): string;
   /** Renders the internal `ClientRuntime` helper class body. Takes no view model. */
   renderClientRuntime(): string;
+  /** Renders the `{Interface}PagingExtensions` static class body holding one or more auto-paginating wrapper methods. */
+  renderPagingExtensions(view: PagingExtensionsView): string;
 }
 /**
  * Builds the Handlebars environment shared by every template, registering the
@@ -393,6 +528,226 @@ function renderMethodBlock(m: MethodView): string {
   return lines.join("\n");
 }
 
+/** How many redirects a continuation request follows, as `HttpClientHandler` does by default. */
+const MAX_NEXT_LINK_REDIRECTS = 50;
+
+/** Doc-comment lines shared by every paging wrapper method, regardless of strategy. */
+function renderPagingMethodDoc(m: PagingMethodView): string[] {
+  const lines: string[] = [`    /// <summary>`];
+  if (m.doc) {
+    for (const docLine of m.doc.split("\n")) lines.push(`    /// ${docLine}`);
+  } else {
+    lines.push(
+      `    /// Retrieves every item across all pages of <see cref="${m.interfaceName}.${m.rawMethodName}"/>.`,
+    );
+  }
+  lines.push(`    /// </summary>`);
+  if (m.strategy === "nextLink") {
+    lines.push(
+      `    /// <remarks>`,
+      `    /// Follows the response's next-page link until none remains. Each link is resolved against the`,
+      `    /// client's base address and must keep its scheme, host, and port: a link to any other origin`,
+      `    /// throws <see cref="${fx("InvalidOperationException")}"/> before anything is sent, so the credentials this`,
+      `    /// client carries never reach a server the API pointed it at. Redirects are followed by the wrapper,`,
+      `    /// and each is checked the same way. The first page's failures surface as`,
+      `    /// Refit's <c>ApiException</c>; failures while following a link surface as <c>HttpRequestException</c>.`,
+      `    /// </remarks>`,
+    );
+  }
+  return lines;
+}
+
+/**
+ * The statement that ends a paging wrapper on a `null` page, which a raw method whose
+ * success may carry no body (`PagedResult<Store> | void`) returns for that success.
+ *
+ * @param m - The paging method.
+ * @param page - The page variable.
+ * @param indent - The statement's indentation.
+ * @returns The statement, or nothing when every success carries a page.
+ */
+function nullPageGuard(
+  m: PagingMethodView,
+  page: string,
+  indent: string,
+): string[] {
+  return m.pageNullable ? [`${indent}if (${page} is null) yield break;`] : [];
+}
+
+/**
+ * The signature line every paging wrapper method shares.
+ *
+ * @param m - The paging method.
+ * @returns The line, without a trailing brace.
+ */
+function pagingSignature(m: PagingMethodView): string {
+  return `    public static async ${fx("IAsyncEnumerable", "generic")}<${m.itemType}> ${m.methodName}(${m.paramsDeclaration})`;
+}
+
+/** Renders the `nextLink`-strategy paging wrapper method body (see {@link PagingMethodView}). */
+function renderNextLinkPagingMethod(m: PagingMethodView): string[] {
+  const callArgs = m.callArgNames.join(", ");
+  const page = m.pageVarName;
+  const item = m.itemVarName;
+  const client = m.receiverVarName;
+  const httpClientFactory = m.httpClientFactoryVarName!;
+  const httpClient = m.httpClientVarName!;
+  const baseAddress = m.baseAddressVarName!;
+  const serializer = m.serializerVarName!;
+  const nextLink = m.nextLinkVarName!;
+  const nextUri = m.nextUriVarName!;
+  const request = m.requestVarName!;
+  const response = m.responseVarName!;
+  const nextPage = m.nextPageVarName!;
+  const redirects = m.redirectsVarName!;
+  const location = m.locationVarName!;
+  const uri = fx("Uri");
+  const invalid = fx("InvalidOperationException");
+  const more = m.nextLinkIsString
+    ? `!string.IsNullOrEmpty(${nextLink})`
+    : `${nextLink} is not null`;
+  const last = m.nextLinkIsString
+    ? `string.IsNullOrEmpty(${nextLink})`
+    : `${nextLink} is null`;
+  return [
+    pagingSignature(m),
+    `    {`,
+    `        var ${page} = await ${client}.${m.rawMethodName}(${callArgs}).ConfigureAwait(false);`,
+    ...nullPageGuard(m, page, "        "),
+    `        foreach (var ${item} in ${page}.${m.itemsPropertyName})`,
+    `        {`,
+    `            cancellationToken.ThrowIfCancellationRequested();`,
+    `            yield return ${item};`,
+    `        }`,
+    ``,
+    `        var ${nextLink} = ${page}.${m.nextLinkPropertyName};`,
+    `        if (${last}) yield break;`,
+    `        var ${httpClient} = ${httpClientFactory}.CreateClient("${m.httpClientName}");`,
+    `        var ${baseAddress} = ${httpClient}.BaseAddress ?? throw new ${invalid}("The \\"${m.httpClientName}\\" HttpClient has no BaseAddress to check next-page links against.");`,
+    `        var ${serializer} = ClientRuntime.CreateSettings().ContentSerializer;`,
+    `        while (${more})`,
+    `        {`,
+    `            var ${nextUri} = new ${uri}(${baseAddress}, ${nextLink});`,
+    `            ${fx("HttpResponseMessage")} ${response};`,
+    // The continuation client does not follow redirects, so every hop, not just the
+    // link itself, is checked against the base address before anything is sent.
+    `            for (var ${redirects} = 0; ; ${redirects}++)`,
+    `            {`,
+    `                if (${uri}.Compare(${nextUri}, ${baseAddress}, ${fx("UriComponents")}.SchemeAndServer, ${fx("UriFormat")}.UriEscaped, ${fx("StringComparison")}.OrdinalIgnoreCase) != 0)`,
+    `                {`,
+    `                    throw new ${invalid}("Refusing to send a next-page request to " + ${nextUri}.Scheme + "://" + ${nextUri}.Authority + ", which is not the origin of the client's base address.");`,
+    `                }`,
+    `                using var ${request} = new ${fx("HttpRequestMessage")}(${fx("HttpMethod")}.Get, ${nextUri});`,
+    ...(m.replayOptions ?? []).map(
+      (o) =>
+        `                ${request}.Options.Set(new ${fx("HttpRequestOptionsKey", "generic")}<object?>(${o.key}), ${o.value});`,
+    ),
+    `                ${response} = await ${httpClient}.SendAsync(${request}, cancellationToken).ConfigureAwait(false);`,
+    `                if ((int)${response}.StatusCode is < 300 or > 399 || ${response}.Headers.Location is null) break;`,
+    `                var ${location} = ${response}.Headers.Location;`,
+    `                ${response}.Dispose();`,
+    `                if (${redirects} == ${MAX_NEXT_LINK_REDIRECTS})`,
+    `                {`,
+    `                    throw new ${invalid}("Stopped following a next-page link after ${MAX_NEXT_LINK_REDIRECTS} redirects.");`,
+    `                }`,
+    `                ${nextUri} = new ${uri}(${nextUri}, ${location});`,
+    `            }`,
+    `            using (${response})`,
+    `            {`,
+    `                ${response}.EnsureSuccessStatusCode();`,
+    `                var ${nextPage} = await ${serializer}.FromHttpContentAsync<${m.pageType}>(${response}.Content, cancellationToken).ConfigureAwait(false);`,
+    `                if (${nextPage} is null) yield break;`,
+    `                foreach (var ${item} in ${nextPage}.${m.itemsPropertyName})`,
+    `                {`,
+    `                    cancellationToken.ThrowIfCancellationRequested();`,
+    `                    yield return ${item};`,
+    `                }`,
+    `                ${nextLink} = ${nextPage}.${m.nextLinkPropertyName};`,
+    `            }`,
+    `        }`,
+    `    }`,
+  ];
+}
+
+/** Renders the `continuationToken`-strategy paging wrapper method body (see {@link PagingMethodView}). */
+function renderContinuationTokenPagingMethod(m: PagingMethodView): string[] {
+  const callArgs = m.callArgNames.join(", ");
+  const page = m.pageVarName;
+  const item = m.itemVarName;
+  const client = m.receiverVarName;
+  const token = m.tokenVarName!;
+  return [
+    pagingSignature(m),
+    `    {`,
+    `        string? ${token} = ${m.continuationTokenSeedExpression};`,
+    `        do`,
+    `        {`,
+    `            var ${page} = await ${client}.${m.rawMethodName}(${callArgs}).ConfigureAwait(false);`,
+    ...nullPageGuard(m, page, "            "),
+    `            foreach (var ${item} in ${page}.${m.itemsPropertyName})`,
+    `            {`,
+    `                cancellationToken.ThrowIfCancellationRequested();`,
+    `                yield return ${item};`,
+    `            }`,
+    `            ${token} = ${page}.${m.continuationTokenPropertyName};`,
+    `        } while (!string.IsNullOrEmpty(${token}));`,
+    `    }`,
+  ];
+}
+
+/** Renders the `offset`/`pageIndex`-strategy paging wrapper method body (see {@link PagingMethodView}). */
+function renderCounterPagingMethod(m: PagingMethodView): string[] {
+  const callArgs = m.callArgNames.join(", ");
+  const page = m.pageVarName;
+  const item = m.itemVarName;
+  const client = m.receiverVarName;
+  const count = m.countVarName!;
+  // Checked, so a counter narrower than the position it must reach (a `uint8` offset
+  // past 255) throws instead of wrapping around and reading earlier pages again.
+  const advance =
+    m.strategy === "pageIndex"
+      ? `checked { ${m.counterVarName}++; }`
+      : `checked { ${m.counterVarName} += (${m.counterCsType})${count}; }`;
+  return [
+    pagingSignature(m),
+    `    {`,
+    `        var ${m.counterVarName} = ${m.counterSeedExpression};`,
+    `        while (true)`,
+    `        {`,
+    `            var ${page} = await ${client}.${m.rawMethodName}(${callArgs}).ConfigureAwait(false);`,
+    ...nullPageGuard(m, page, "            "),
+    `            var ${count} = 0;`,
+    `            foreach (var ${item} in ${page}.${m.itemsPropertyName})`,
+    `            {`,
+    `                cancellationToken.ThrowIfCancellationRequested();`,
+    `                ${count}++;`,
+    `                yield return ${item};`,
+    `            }`,
+    `            if (${count} == 0) yield break;`,
+    `            ${advance}`,
+    `        }`,
+    `    }`,
+  ];
+}
+
+/** Renders one paging wrapper method's doc comment plus its strategy-specific body. */
+function renderPagingMethodBlock(m: PagingMethodView): string {
+  const lines = renderPagingMethodDoc(m);
+  switch (m.strategy) {
+    case "nextLink":
+      lines.push(...renderNextLinkPagingMethod(m));
+      break;
+    case "continuationToken":
+      lines.push(...renderContinuationTokenPagingMethod(m));
+      break;
+    case "offset":
+    case "pageIndex":
+      lines.push(...renderCounterPagingMethod(m));
+      break;
+  }
+  return lines.join("\n");
+}
+
 /**
  * Compiles all templates and returns a {@link Renderer} instance.
  *
@@ -429,6 +784,11 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
     env,
     "client-runtime",
     overrides["client-runtime"],
+  );
+  const pagingExtensionsTemplate = loadTemplate(
+    env,
+    "paging-extensions",
+    overrides["paging-extensions"],
   );
 
   return {
@@ -470,6 +830,18 @@ export function createRenderer(overrides: TemplateOverrides = {}): Renderer {
 
     renderClientRuntime() {
       return clientRuntimeTemplate({});
+    },
+
+    renderPagingExtensions(view) {
+      const methodBlocks = view.methods.map(renderPagingMethodBlock);
+      const methodsBlock =
+        methodBlocks.length > 0 ? methodBlocks.join("\n\n") + "\n" : "";
+      return pagingExtensionsTemplate({
+        interfaceName: view.interfaceName,
+        className: view.className,
+        access: view.access,
+        methodsBlock,
+      });
     },
   };
 }

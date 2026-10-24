@@ -387,3 +387,82 @@ interface Admin {
   @post reindex(): void;
   @route("status") @get status(): Envelope<string>;
 }
+
+model Shelf {
+  name: string;
+}
+
+model LinkPage {
+  @pageItems items: Shelf[];
+  @nextLink next?: url;
+}
+
+model StringLinkPage {
+  @pageItems items: Shelf[];
+  @nextLink next?: string;
+}
+
+model TokenPage {
+  @pageItems items: Shelf[];
+  @continuationToken nextToken?: string;
+}
+
+model CountedPage {
+  @pageItems items: Shelf[];
+}
+
+/** One operation per paging style TypeSpec's core decorators express. */
+@route("/shelves")
+interface Shelves {
+  @route("links") @list @get links(
+    @header("X-Tenant") tenant?: string,
+    @header("If-Modified-Since") since?: utcDateTime,
+    @cookie session?: string,
+  ): LinkPage;
+  @route("relative") @list @get relative(): StringLinkPage;
+  @route("tokens") @list @get tokens(
+    @query @continuationToken token?: string,
+  ): TokenPage;
+  @route("offsets") @list @get offsets(
+    @query @offset offset?: int32,
+    @query @pageSize size?: int32,
+  ): CountedPage;
+  @route("indexes") @list @get indexes(
+    @query @pageIndex page?: int32 = 1,
+  ): CountedPage;
+  @route("maybe") @list @get maybe(
+    @query @continuationToken token?: string,
+  ): TokenPage | void;
+}
+
+@route("/small-shelves")
+interface SmallShelves {
+  @list @get list(@query @offset offset?: uint8): CountedPage;
+}
+
+model Book {
+  title: string;
+}
+
+model SignedBook extends Book {
+  signedBy: string;
+}
+
+/** A discriminated page, whose derived page narrows the items it declares. */
+@discriminator("kind")
+model Catalog {
+  kind: string;
+  @pageItems items: Book[];
+  @nextLink next?: url;
+}
+
+model SignedCatalog extends Catalog {
+  kind: "signed";
+  items: SignedBook[];
+}
+
+@route("/catalogs")
+interface Catalogs {
+  @list @get signed(): SignedCatalog;
+  @route("any") @list @get any(): Catalog;
+}

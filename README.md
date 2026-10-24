@@ -104,7 +104,7 @@ Different source names can also become the same C# name, which C# rejects, so co
 - Properties: `foo` and `Foo`, a property that shares its record's name (`model Owner { owner: string }`, `CS0542`), or the name of a member every record has (`EqualityContract`, `Equals`, `ToString`, ...). In a `@discriminator` hierarchy, a derived property whose C# name is that of an inherited one is reported too, since C# would hide the inherited member; one that redeclares an inherited property to narrow its type is left to the inherited member.
 - JSON names: two properties whose JSON names differ only in case, or that clash with an inherited property or the discriminator, which System.Text.Json rejects at runtime.
 - Operations: `read` and `Read` both become `ReadAsync`. Parameters: `foo` and `Foo` both become `foo`, and a parameter cannot be named `body` (when there is a request body), `cancellationToken` or `additionalQueryParameters`, which every method already takes.
-- Types: two models or enums with the same name in different child namespaces (they are flattened into one C# namespace), two interfaces with the same name, and a model named like a generated type (`IItems`, the aggregate client, its `...Extensions` class, an enum's `...JsonConverter`, `ClientRuntime`, `MergePatch`, `IMergePatch`). An interface cannot be named like the aggregate client or one of its members (`Create`, `CreateRefitSettings`, `CreateHttpMessageHandler`, `Standalone`), and `client-name` cannot be `Standalone`.
+- Types: two models or enums with the same name in different child namespaces (they are flattened into one C# namespace), two interfaces with the same name, and a model named like a generated type (`IItems`, the aggregate client, its `...Extensions` class, an interface's `...PagingExtensions` class, an enum's `...JsonConverter`, `ClientRuntime`, `MergePatch`, `IMergePatch`). An interface cannot be named like the aggregate client or one of its members (`Create`, `CreateRefitSettings`, `CreateHttpMessageHandler`, `Standalone`), and `client-name` cannot be `Standalone`.
 - File names that differ only in case (`Widget` and `widget`), which are the same file on Windows and macOS.
 - With `all-versions`, two version values that sanitize to the same namespace segment (`1.0` and `1_0`).
 
@@ -361,6 +361,7 @@ A request or success response that cannot be sent or read correctly is reported 
 - A `@discriminator` model that is also a variant of another discriminated model (a nested discriminator). `System.Text.Json` can resolve only one discriminator per hierarchy. Reported as `unsupported-nested-discriminator`. A grouping model with no discriminator of its own (`model Dog extends Animal {}`) is fine.
 - `@encode` values the client cannot honour (see the encodings table). Reported as `unsupported-encoding`.
 - Streaming responses such as server-sent events are read in full before the call returns.
+- A `@list` operation whose paging metadata doesn't resolve to a supported forward-iteration strategy — a paging role nested inside a sub-object instead of declared directly, an optional `@pageItems` array, a `continuationToken` output with no matching input parameter or that is not a string, an anonymous/unmappable page response type, a wrapper name another operation's method already uses, or no `nextLink`/`continuationToken`/`offset`/`pageIndex` signal at all. Reported as `unsupported-paging-style`; the raw single-page method is still generated.
 
 ### Merge-patch request bodies
 
@@ -405,6 +406,47 @@ Every method also takes a plain JSON wire name (`patch.Set("displayName", "…")
 The expression form only accepts a property read straight off the lambda parameter, because a merge patch is a flat map of the model's own JSON properties. Something nested like `w => w.Name.Length` throws `ArgumentException` rather than quietly sending a `"Length"` field the server has never heard of. To patch inside a nested object, `Set` the whole object.
 
 > **Note:** this is the client-side counterpart to the `MergePatch<T>` emitted by `@massivescale/tsp-aspnetcore-api`. That one is built for _reading_ a patch in a controller; this one is built for _writing_ one. If your solution references both generated projects, the two types live in different namespaces and do not conflict, but don't `using` both into the same file.
+
+### Pagination
+
+An operation decorated `@list`, whose response declares `@pageItems`, gets a second generated method alongside the raw single-page one: an `IAsyncEnumerable<T>` extension method that transparently follows every page. Detection uses TypeSpec's own core pagination decorators — `@list`, `@pageItems`, `@nextLink`, `@continuationToken`, `@offset`, `@pageIndex` — never an assumed field-naming convention, so it works with any API that follows the TypeSpec paging model.
+
+```typespec
+model PagedResult<T> {
+  @pageItems items: T[];
+  @nextLink next?: url;
+}
+
+@route("/stores")
+interface Stores {
+  @list @get list(skip?: int32, take?: int32): PagedResult<Store>;
+}
+```
+
+```csharp
+await foreach (var store in client.Stores.ListAllAsync(httpClientFactory, cancellationToken: ct))
+{
+    // one Store per iteration, across every page
+}
+```
+
+| Strategy                 | How the wrapper advances                                                                                                                       | Extra parameter      |
+|--------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|----------------------|
+| `@nextLink`              | Follows the response's next-page link through the interface's own named `HttpClient`, bypassing Refit for continuation requests.               | `IHttpClientFactory` |
+| `@continuationToken`     | Re-calls the raw Refit method, feeding the previous response's token back into the matching input parameter. The token must be a `string`.     | none                 |
+| `@offset` / `@pageIndex` | Re-calls the raw Refit method with the counter advanced by the received item count (`offset`) or by one (`pageIndex`); stops on an empty page. | none                 |
+
+When more than one signal is present on a page model, `nextLink` wins over `continuationToken`, which wins over `offset`/`pageIndex` — `nextLink` is the most self-contained, since the URL already embeds everything the next request needs. `prevLink`/`firstLink`/`lastLink` are backward/random-access links, not forward-iteration drivers, and render as ordinary model properties with no special codegen.
+
+Only the `nextLink` strategy needs the extra `IHttpClientFactory` parameter: pass the one from the container you called `Add{Client}` on (a client built with `Create` has no such factory). For each interface with such an operation, `Add{Client}` also registers a named `HttpClient` the wrapper sends continuation requests through: configured by the same `configureHttpClient` and `configureBuilder`, with the same message handler, and read with the same serializer as the first page, but not following redirects by itself. The operation's header and cookie parameters are sent again on every continuation request, in the same wire format; query parameters are expected to be part of the link.
+
+A next-page link comes from the server, and the client sends it with whatever credentials you configured, such as an `Authorization` default header or an authentication handler. So each link is resolved against the client's `BaseAddress` and must keep the same scheme, host, and port: a link to any other origin throws `InvalidOperationException` before the request is sent. The wrapper follows redirects itself, up to 50, checking each one the same way, so a redirect cannot take those credentials elsewhere either. If your `configureBuilder` sets a primary handler, that handler is used for continuation requests too and decides whether redirects are followed for you. A client with no `BaseAddress` throws as soon as the API returns a next-page link.
+
+Cookies the server sets with `Set-Cookie` are not carried from the first page to the continuation requests: the two go through different handlers, each with its own cookie container. The generated client does not rely on server-set cookies anywhere, since `IHttpClientFactory` recycles handlers every few minutes and shares them between callers. Cookie parameters the operation declares with `@cookie` are sent on every page. An API that needs a session cookie should get it from a cookie-handling `DelegatingHandler` added through `configureBuilder`.
+
+Next links should be absolute (`https://api.example.com/stores?page=2`) or root-relative (`/stores?page=2`). A link relative to the page it came from, such as `?page=2` or `page2`, is also resolved against `BaseAddress`, not against that page's URL as RFC 3986 would: the Refit method that reads the first page returns only its content, so the wrapper never learns the URL that page came from.
+
+An operation whose success may carry no body (`PagedResult<Store> | void`) ends the enumeration when that empty success comes back.
 
 ## Multiple API versions
 
