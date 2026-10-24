@@ -888,6 +888,79 @@ describe("paging", () => {
     });
   });
 
+  describe("pages that redeclare inherited paging properties", () => {
+    it("reports items the record inherits as something other than a list, instead of failing", async () => {
+      const [results, diagnostics] = await emitWithDiagnostics(`
+        import "@typespec/http";
+        using Http;
+
+        @service(#{ title: "Test API" })
+        namespace TestApi;
+
+        model Store { name: string; }
+
+        @discriminator("kind")
+        model Page { kind: string; items: unknown; @nextLink next?: url; }
+        model StorePage extends Page { kind: "store"; @pageItems items: Store[]; }
+
+        @route("/stores")
+        interface Stores {
+          @list @get list(): StorePage;
+        }
+      `);
+      ok(
+        diagnostics.some(
+          (d) =>
+            d.code ===
+              "@massivescale/tsp-refit-client/unsupported-paging-style" &&
+            d.message.includes("does not hold as a list"),
+        ),
+      );
+      const content = results["Endpoints/IStores.g.cs"];
+      ok(content.includes("ListAsync("), "Expected the raw method kept");
+      ok(!content.includes("ListAllAsync"), "Expected no wrapper");
+    });
+
+    it("reads a redeclared next link and token by the name the record gives them", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        import "@massivescale/tsp-refit-client";
+        using Http;
+        using MassiveScale.TspRefitClient;
+
+        @service(#{ title: "Test API" })
+        namespace TestApi;
+
+        model Store { name: string; }
+        model LinkPage { @pageItems items: Store[]; @nextLink next?: url; }
+        model RenamedLinkPage extends LinkPage { @clientName("Following") next?: url; }
+        model TokenPage { @pageItems items: Store[]; @continuationToken token?: string; }
+        model RenamedTokenPage extends TokenPage { @clientName("Cursor") token?: string; }
+
+        @route("/links")
+        interface Links {
+          @list @get list(): RenamedLinkPage;
+        }
+
+        @route("/tokens")
+        interface Tokens {
+          @list @get list(@query @continuationToken token?: string): RenamedTokenPage;
+        }
+      `);
+      const links = results["Endpoints/ILinks.g.cs"];
+      ok(
+        links.includes("var nextLink = page.Following;") &&
+          links.includes("nextLink = nextPage.Following;") &&
+          !links.includes(".Next;"),
+        "Expected the next link read by the record's own name",
+      );
+      ok(
+        results["Endpoints/ITokens.g.cs"].includes("token2 = page.Cursor;"),
+        "Expected the token read by the record's own name",
+      );
+    });
+  });
+
   describe("the extensions class", () => {
     it("names the raw method through its interface when the operation has no doc", async () => {
       const results = await emit(`

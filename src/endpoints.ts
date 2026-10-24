@@ -1657,9 +1657,19 @@ function buildPagingMethodView(
     );
     return undefined;
   }
-  const itemsArrayModel = recordItemsProp.type as Model;
+  // A base can declare the property as something other than a list (`items: unknown`)
+  // that a derived page narrows to `Store[]`; the record still holds the base's type.
+  const itemsArrayModel = recordItemsProp.type;
+  if (itemsArrayModel.kind !== "Model" || !isArrayModelType(itemsArrayModel)) {
+    reportUnsupportedPaging(
+      program,
+      operation,
+      "an items property the page's record does not hold as a list",
+    );
+    return undefined;
+  }
   const itemType = mapType(
-    itemsArrayModel.indexer!.value,
+    itemsArrayModel.indexer.value,
     program,
     models,
     enums,
@@ -1766,8 +1776,13 @@ function buildPagingMethodView(
       );
       return undefined;
     }
+    const recordNextLink = recordProperty(
+      program,
+      pageModel,
+      nextLink.property,
+    );
     const nextLinkPropertyName = toCsPropName(
-      getClientName(program, nextLink.property) ?? nextLink.property.name,
+      getClientName(program, recordNextLink) ?? recordNextLink.name,
     );
     if (!pageProperties.has(nextLink.property)) {
       reportUnsupportedPaging(program, operation, offBody);
@@ -1776,7 +1791,7 @@ function buildPagingMethodView(
     // The link is resolved with `new Uri(baseAddress, link)`, which takes a string or a
     // Uri; a link formatted as anything else (`@format("uuid")`) cannot be followed.
     const nextLinkType = mapPropertyType(
-      recordProperty(program, pageModel, nextLink.property),
+      recordNextLink,
       program,
       models,
       enums,
@@ -1883,9 +1898,13 @@ function buildPagingMethodView(
       );
       return undefined;
     }
+    const recordToken = recordProperty(
+      program,
+      pageModel,
+      continuationToken.property,
+    );
     const continuationTokenPropertyName = toCsPropName(
-      getClientName(program, continuationToken.property) ??
-        continuationToken.property.name,
+      getClientName(program, recordToken) ?? recordToken.name,
     );
     const tokenVarName = uniqueLocalName("token", taken);
     return {
