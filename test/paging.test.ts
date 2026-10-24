@@ -52,7 +52,7 @@ describe("paging", () => {
       );
       ok(
         content.includes(
-          'httpClientFactory.CreateClient("TestApi.Client.IStores")',
+          'httpClientFactory.CreateClient("TestApi.Client.IStores.NextLinks")',
         ),
         "Expected a namespace-qualified named HttpClient, so an identically-named interface in a different service/version can't collide with it",
       );
@@ -84,9 +84,21 @@ describe("paging", () => {
       ok(extFile, "Expected TestApiClientExtensions.g.cs");
       ok(
         results[extFile].includes(
-          'AddEndpoint<IStores>(services, configureHttpClient, configureBuilder, "TestApi.Client.IStores");',
+          "AddEndpoint<IStores>(services, configureHttpClient, configureBuilder);",
         ),
-        "Expected named-client DI registration, under the same namespace-qualified name the wrapper resolves",
+        "Expected the interface's own Refit client registered as for any other interface",
+      );
+      ok(
+        results[extFile].includes(
+          'AddNextLinkClient(services, "TestApi.Client.IStores.NextLinks", configureHttpClient, configureBuilder);',
+        ),
+        "Expected the continuation client registered under the name the wrapper resolves",
+      );
+      ok(
+        results[extFile].includes(
+          ".ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })",
+        ),
+        "Expected the continuation client not to follow redirects by itself",
       );
       ok(
         !results[extFile].includes("SystemTextJsonContentSerializer"),
@@ -113,7 +125,7 @@ describe("paging", () => {
       const content = results["Endpoints/IStores.g.cs"];
       ok(
         content.includes(
-          'var baseAddress = httpClient.BaseAddress ?? throw new InvalidOperationException("The \\"TestApi.Client.IStores\\" HttpClient has no BaseAddress to check next-page links against.");',
+          'var baseAddress = httpClient.BaseAddress ?? throw new InvalidOperationException("The \\"TestApi.Client.IStores.NextLinks\\" HttpClient has no BaseAddress to check next-page links against.");',
         ),
         "Expected a missing base address to fail before following any link",
       );
@@ -126,7 +138,7 @@ describe("paging", () => {
           "if (Uri.Compare(nextUri, baseAddress, UriComponents.SchemeAndServer, UriFormat.UriEscaped, StringComparison.OrdinalIgnoreCase) != 0)",
         ) &&
           content.includes(
-            'throw new InvalidOperationException("Refusing to follow a next-page link to " + nextUri.Scheme + "://" + nextUri.Authority',
+            'throw new InvalidOperationException("Refusing to send a next-page request to " + nextUri.Scheme + "://" + nextUri.Authority',
           ),
         "Expected a link to another origin to throw rather than be sent with the client's credentials",
       );
@@ -139,6 +151,19 @@ describe("paging", () => {
       ok(
         content.indexOf("!= 0)") < content.indexOf("httpClient.SendAsync("),
         "Expected the origin check before the request is sent",
+      );
+      ok(
+        content.includes("for (var redirects = 0; ; redirects++)") &&
+          content.includes(
+            "if ((int)response.StatusCode is < 300 or > 399 || response.Headers.Location is null) break;",
+          ) &&
+          content.includes("nextUri = new Uri(nextUri, location);"),
+        "Expected each redirect resolved and sent back through the origin check",
+      );
+      ok(
+        content.includes(
+          'throw new InvalidOperationException("Stopped following a next-page link after 50 redirects.");',
+        ),
       );
       ok(
         content.includes("while (nextLink is not null)"),
@@ -401,7 +426,7 @@ describe("paging", () => {
       const content = results[ifaceFile];
       ok(
         content.includes(
-          'httpClientFactory.CreateClient("TestApi.Client.IWidgets")',
+          'httpClientFactory.CreateClient("TestApi.Client.IWidgets.NextLinks")',
         ),
         "Expected the nextLink strategy to win over continuationToken",
       );

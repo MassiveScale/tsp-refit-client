@@ -135,9 +135,7 @@ describe("client", () => {
     const content = results["TestApiClientExtensions.g.cs"];
     ok(content, "Expected TestApiClientExtensions.g.cs");
     ok(
-      content.includes(
-        ".AddRefitClient<T>(ClientRuntime.CreateSettings(), httpClientName)",
-      ),
+      content.includes(".AddRefitClient<T>(ClientRuntime.CreateSettings())"),
       "Expected the interface registered with the runtime's Refit settings",
     );
     ok(
@@ -249,5 +247,21 @@ describe("client", () => {
       ),
       "Expected the plain, no-extra-arguments call site unchanged by the paging feature",
     );
+  });
+
+  it("leaves out the continuation client helper when no interface follows next links", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @route("/items")
+      interface Items {
+        @get list(): string[];
+      }
+    `);
+    ok(!results["TestApiClientExtensions.g.cs"].includes("AddNextLinkClient"));
   });
 });

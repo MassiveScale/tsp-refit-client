@@ -17,11 +17,9 @@ export interface EndpointName {
   /** C# access modifier of the interface: `"public"` or `"internal"`. */
   access: string;
   /**
-   * Set (already namespace-qualified, e.g. `"My.Api.Client.IStores"`) only
-   * when this interface has at least one `nextLink`-strategy paging wrapper,
-   * which needs a named `HttpClient`/`RefitSettings` registration under that
-   * exact name. Interfaces using only the `continuationToken`/`offset`/
-   * `pageIndex` strategies, or no paging at all, leave this unset.
+   * Set only when this interface has a `nextLink`-strategy paging wrapper: the name of the
+   * `HttpClient` it sends continuation requests through (e.g.
+   * `"My.Api.Client.IStores.NextLinks"`), which the registration method registers.
    */
   pagingHttpClientName?: string;
 }
@@ -36,9 +34,8 @@ export interface EndpointName {
  * @param csNs - C# namespace the generated file is emitted into.
  * @param endpoints - The Refit interfaces to register, and their access; each interface maps to a client property/parameter with the leading
  *   `I` stripped. An internal interface becomes an internal property, and any internal
- *   interface makes the aggregate client's constructor internal. `pagingHttpClientName`
- *   marks an interface that needs a named `HttpClient`/`RefitSettings` registration for
- *   its `nextLink`-strategy paging wrapper(s), registered under that exact name.
+ *   interface makes the aggregate client's constructor internal. An interface with a
+ *   `pagingHttpClientName` also gets the client its next-link paging wrapper sends through.
  * @param renderer - Handlebars renderer used to produce the file contents.
  * @param runtimeNamespace - The C# namespace of the `ClientRuntime` helper, which
  *   the aggregate client names in full so an endpoint property cannot hide it.
@@ -91,6 +88,7 @@ export function buildExtensions(
       : "public",
     runtimeNamespace,
     interfaces,
+    hasNextLinkPaging: interfaces.some((i) => i.pagingHttpClientName),
   };
   const body = renderer.renderExtensions(view);
   const fileView: FileView = {

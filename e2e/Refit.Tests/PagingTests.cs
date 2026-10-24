@@ -1,3 +1,4 @@
+using System.Net;
 using AwesomeAssertions;
 using MassiveScale.KitchenSink.Client;
 using Microsoft.Extensions.DependencyInjection;
@@ -203,6 +204,38 @@ public sealed class NextLinkPagingTests
     }
 
     [TestMethod]
+    public async Task A_same_origin_redirect_is_followed_with_the_parameters_sent_again()
+    {
+        var (client, factory, handler) = Paging.Container();
+        handler
+            .RespondJson("""{"items":[{"name":"a"}],"next":"/shelves/links?cursor=2"}""")
+            .RespondRedirect("/shelves/links?cursor=2b", HttpStatusCode.TemporaryRedirect)
+            .RespondJson("""{"items":[{"name":"b"}]}""");
+
+        var shelves = await Paging.All(client.Shelves.LinksAllAsync(factory, tenant: "acme"));
+
+        shelves.Select(s => s.Name).Should().Equal("a", "b");
+        handler.Requests.Should().HaveCount(3);
+        handler.Requests[2].Uri.Should().Be(new Uri("https://api.test/shelves/links?cursor=2b"));
+        handler.Requests[2].Headers["X-Tenant"].Should().Be("acme");
+    }
+
+    [TestMethod]
+    public async Task A_redirect_to_another_origin_throws_before_anything_is_sent_there()
+    {
+        var (client, factory, handler) = Paging.Container();
+        handler
+            .RespondJson("""{"items":[{"name":"a"}],"next":"/shelves/links?cursor=2"}""")
+            .RespondRedirect("https://elsewhere.test/steal");
+
+        var act = async () => await Paging.All(client.Shelves.LinksAllAsync(factory, tenant: "acme"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Refusing to send*elsewhere.test*");
+        handler.Requests.Should().HaveCount(2);
+        handler.Requests.Should().OnlyContain(r => r.Uri.Host == "api.test");
+    }
+
+    [TestMethod]
     [DataRow("https://elsewhere.test/shelves/links?cursor=2")]
     [DataRow("http://api.test/shelves/links?cursor=2")]
     [DataRow("https://api.test:8443/shelves/links?cursor=2")]
@@ -213,7 +246,7 @@ public sealed class NextLinkPagingTests
 
         var act = async () => await Paging.All(client.Shelves.LinksAllAsync(factory, tenant: "acme"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Refusing to follow*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Refusing to send*");
         handler.Requests.Should().ContainSingle();
     }
 }

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Pagination.** An operation marked `@list` whose response declares `@pageItems` also gets an `IAsyncEnumerable<T>` extension method that reads every page, driven by TypeSpec's own paging decorators: `@nextLink`, `@continuationToken`, `@offset`, or `@pageIndex`. A next link is followed through the interface's own named `HttpClient` with the operation's header and cookie parameters, and only on the origin of the client's base address; a link to any other origin throws before it is sent. A paging shape the wrapper cannot read is reported as `unsupported-paging-style`, and the single-page method is generated as before.
+- **Pagination.** An operation marked `@list` whose response declares `@pageItems` also gets an `IAsyncEnumerable<T>` extension method that reads every page, driven by TypeSpec's own paging decorators: `@nextLink`, `@continuationToken`, `@offset`, or `@pageIndex`. A next link is followed with the operation's header and cookie parameters through a named `HttpClient` configured like the interface's own, and only on the origin of the client's base address: a link or redirect to any other origin throws before it is sent. A paging shape the wrapper cannot read is reported as `unsupported-paging-style`, and the single-page method is generated as before.
 
 ## [1.0.0] - 2026-10-15
 

@@ -558,8 +558,8 @@ export function buildRoute(
  *   collision, and the paging wrappers are then left out.
  * @returns The full C# source of the generated interface file, plus, when one of its
  *   operations produced a `nextLink`-strategy paging wrapper, the namespace-qualified
- *   name of the `HttpClient` it resolves, so the caller registers the interface's
- *   client under that name.
+ *   name of the `HttpClient` it resolves, so the caller registers a client under that
+ *   name.
  */
 export function buildInterface(
   csName: string,
@@ -1853,7 +1853,9 @@ function buildPagingMethodView(
       callArgNames: [...allParams.map((p) => p.name), "cancellationToken"],
       nextLinkPropertyName,
       nextLinkIsString,
-      httpClientName: `${csNs}.${csName}`,
+      // Its own name: the continuation client does not follow redirects, unlike the
+      // interface's Refit client.
+      httpClientName: `${csNs}.${csName}.NextLinks`,
       httpClientFactoryVarName,
       httpClientVarName: uniqueLocalName("httpClient", taken),
       baseAddressVarName: uniqueLocalName("baseAddress", taken),
@@ -1863,6 +1865,8 @@ function buildPagingMethodView(
       requestVarName: uniqueLocalName("request", taken),
       responseVarName: uniqueLocalName("response", taken),
       nextPageVarName: uniqueLocalName("nextPage", taken),
+      redirectsVarName: uniqueLocalName("redirects", taken),
+      locationVarName: uniqueLocalName("location", taken),
       replayOptions,
     };
   }

@@ -30,7 +30,7 @@ public sealed record RecordedRequest(
 /// </summary>
 public sealed class StubHandler : HttpMessageHandler
 {
-    private readonly Queue<(HttpStatusCode Status, byte[] Body, string ContentType)> _responses = new();
+    private readonly Queue<(HttpStatusCode Status, byte[] Body, string ContentType, Uri? Location)> _responses = new();
 
     /// <summary>Gets every request seen, oldest first.</summary>
     public List<RecordedRequest> Requests { get; } = [];
@@ -44,7 +44,7 @@ public sealed class StubHandler : HttpMessageHandler
     /// <returns>This handler, so responses can be chained.</returns>
     public StubHandler RespondJson(string json, HttpStatusCode status = HttpStatusCode.OK)
     {
-        _responses.Enqueue((status, Encoding.UTF8.GetBytes(json), "application/json"));
+        _responses.Enqueue((status, Encoding.UTF8.GetBytes(json), "application/json", null));
         return this;
     }
 
@@ -53,7 +53,7 @@ public sealed class StubHandler : HttpMessageHandler
     /// <returns>This handler, so responses can be chained.</returns>
     public StubHandler RespondText(string text)
     {
-        _responses.Enqueue((HttpStatusCode.OK, Encoding.UTF8.GetBytes(text), "text/plain"));
+        _responses.Enqueue((HttpStatusCode.OK, Encoding.UTF8.GetBytes(text), "text/plain", null));
         return this;
     }
 
@@ -62,7 +62,17 @@ public sealed class StubHandler : HttpMessageHandler
     /// <returns>This handler, so responses can be chained.</returns>
     public StubHandler RespondBytes(byte[] data)
     {
-        _responses.Enqueue((HttpStatusCode.OK, data, "application/octet-stream"));
+        _responses.Enqueue((HttpStatusCode.OK, data, "application/octet-stream", null));
+        return this;
+    }
+
+    /// <summary>Queues a redirect, which a real handler set not to follow redirects returns as it is.</summary>
+    /// <param name="location">The <c>Location</c> header, absolute or relative.</param>
+    /// <param name="status">The status code; <c>302 Found</c> when omitted.</param>
+    /// <returns>This handler, so responses can be chained.</returns>
+    public StubHandler RespondRedirect(string location, HttpStatusCode status = HttpStatusCode.Found)
+    {
+        _responses.Enqueue((status, [], "text/plain", new Uri(location, UriKind.RelativeOrAbsolute)));
         return this;
     }
 
@@ -88,13 +98,14 @@ public sealed class StubHandler : HttpMessageHandler
             bytes is null ? null : Encoding.UTF8.GetString(bytes),
             bytes));
 
-        var (status, body, contentType) = _responses.Count > 0
+        var (status, body, contentType, location) = _responses.Count > 0
             ? _responses.Dequeue()
-            : (HttpStatusCode.NoContent, [], "application/json");
+            : (HttpStatusCode.NoContent, [], "application/json", null);
 
         // Refit reads the request back from the response, as a real HttpClientHandler sets it.
         var response = new HttpResponseMessage(status) { Content = new ByteArrayContent(body), RequestMessage = request };
         response.Content.Headers.ContentType = MediaTypeHeaderValue.Parse(contentType);
+        response.Headers.Location = location;
         return response;
     }
 }

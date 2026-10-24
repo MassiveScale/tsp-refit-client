@@ -261,6 +261,10 @@ export interface PagingMethodView {
   nextUriVarName?: string;
   /** `nextLink` strategy only: collision-free local variable name for the content serializer that reads continuation pages. */
   serializerVarName?: string;
+  /** `nextLink` strategy only: collision-free local variable name for the count of redirects followed. */
+  redirectsVarName?: string;
+  /** `nextLink` strategy only: collision-free local variable name for a redirect's target. */
+  locationVarName?: string;
   /**
    * `nextLink` strategy only: the raw method's header and cookie parameters, replayed on
    * every continuation request as the same request options the raw method sets, so the
@@ -337,11 +341,8 @@ export interface InterfaceEntry {
   /** C# access modifier of the property: the interface's own, `"public"` or `"internal"`. */
   access: string;
   /**
-   * Set (to {@link name} itself) only when this interface has at least one
-   * `nextLink`-strategy paging wrapper, which needs a named `HttpClient` to
-   * resolve via `IHttpClientFactory.CreateClient(...)`. Interfaces using only
-   * the `continuationToken`/`offset`/`pageIndex` strategies, or no paging at
-   * all, leave this unset and are registered exactly as before.
+   * Set only when this interface has a `nextLink`-strategy paging wrapper: the name of the
+   * `HttpClient` it sends continuation requests through, which the extensions class registers.
    */
   pagingHttpClientName?: string;
 }
@@ -360,6 +361,8 @@ export interface ExtensionsView {
   runtimeNamespace: string;
   /** Ordered list of Refit interface entries. */
   interfaces: InterfaceEntry[];
+  /** Whether any interface has a nextLink paging wrapper, which needs its continuation client registered. */
+  hasNextLinkPaging: boolean;
 }
 /** View model for the generated `.csproj` project file. */
 export interface CsprojView {
@@ -525,6 +528,9 @@ function renderMethodBlock(m: MethodView): string {
   return lines.join("\n");
 }
 
+/** How many redirects a continuation request follows, as `HttpClientHandler` does by default. */
+const MAX_NEXT_LINK_REDIRECTS = 50;
+
 /** Doc-comment lines shared by every paging wrapper method, regardless of strategy. */
 function renderPagingMethodDoc(m: PagingMethodView): string[] {
   const lines: string[] = [`    /// <summary>`];
@@ -542,7 +548,8 @@ function renderPagingMethodDoc(m: PagingMethodView): string[] {
       `    /// Follows the response's next-page link until none remains. Each link is resolved against the`,
       `    /// client's base address and must keep its scheme, host, and port: a link to any other origin`,
       `    /// throws <see cref="${fx("InvalidOperationException")}"/> before anything is sent, so the credentials this`,
-      `    /// client carries never reach a server the API pointed it at. The first page's failures surface as`,
+      `    /// client carries never reach a server the API pointed it at. Redirects are followed by the wrapper,`,
+      `    /// and each is checked the same way. The first page's failures surface as`,
       `    /// Refit's <c>ApiException</c>; failures while following a link surface as <c>HttpRequestException</c>.`,
       `    /// </remarks>`,
     );
@@ -592,6 +599,8 @@ function renderNextLinkPagingMethod(m: PagingMethodView): string[] {
   const request = m.requestVarName!;
   const response = m.responseVarName!;
   const nextPage = m.nextPageVarName!;
+  const redirects = m.redirectsVarName!;
+  const location = m.locationVarName!;
   const uri = fx("Uri");
   const invalid = fx("InvalidOperationException");
   const more = m.nextLinkIsString
@@ -619,25 +628,42 @@ function renderNextLinkPagingMethod(m: PagingMethodView): string[] {
     `        while (${more})`,
     `        {`,
     `            var ${nextUri} = new ${uri}(${baseAddress}, ${nextLink});`,
-    `            if (${uri}.Compare(${nextUri}, ${baseAddress}, ${fx("UriComponents")}.SchemeAndServer, ${fx("UriFormat")}.UriEscaped, ${fx("StringComparison")}.OrdinalIgnoreCase) != 0)`,
+    `            ${fx("HttpResponseMessage")} ${response};`,
+    // The continuation client does not follow redirects, so every hop, not just the
+    // link itself, is checked against the base address before anything is sent.
+    `            for (var ${redirects} = 0; ; ${redirects}++)`,
     `            {`,
-    `                throw new ${invalid}("Refusing to follow a next-page link to " + ${nextUri}.Scheme + "://" + ${nextUri}.Authority + ", which is not the origin of the client's base address.");`,
-    `            }`,
-    `            using var ${request} = new ${fx("HttpRequestMessage")}(${fx("HttpMethod")}.Get, ${nextUri});`,
+    `                if (${uri}.Compare(${nextUri}, ${baseAddress}, ${fx("UriComponents")}.SchemeAndServer, ${fx("UriFormat")}.UriEscaped, ${fx("StringComparison")}.OrdinalIgnoreCase) != 0)`,
+    `                {`,
+    `                    throw new ${invalid}("Refusing to send a next-page request to " + ${nextUri}.Scheme + "://" + ${nextUri}.Authority + ", which is not the origin of the client's base address.");`,
+    `                }`,
+    `                using var ${request} = new ${fx("HttpRequestMessage")}(${fx("HttpMethod")}.Get, ${nextUri});`,
     ...(m.replayOptions ?? []).map(
       (o) =>
-        `            ${request}.Options.Set(new ${fx("HttpRequestOptionsKey", "generic")}<object?>(${o.key}), ${o.value});`,
+        `                ${request}.Options.Set(new ${fx("HttpRequestOptionsKey", "generic")}<object?>(${o.key}), ${o.value});`,
     ),
-    `            using var ${response} = await ${httpClient}.SendAsync(${request}, cancellationToken).ConfigureAwait(false);`,
-    `            ${response}.EnsureSuccessStatusCode();`,
-    `            var ${nextPage} = await ${serializer}.FromHttpContentAsync<${m.pageType}>(${response}.Content, cancellationToken).ConfigureAwait(false);`,
-    `            if (${nextPage} is null) yield break;`,
-    `            foreach (var ${item} in ${nextPage}.${m.itemsPropertyName})`,
-    `            {`,
-    `                cancellationToken.ThrowIfCancellationRequested();`,
-    `                yield return ${item};`,
+    `                ${response} = await ${httpClient}.SendAsync(${request}, cancellationToken).ConfigureAwait(false);`,
+    `                if ((int)${response}.StatusCode is < 300 or > 399 || ${response}.Headers.Location is null) break;`,
+    `                var ${location} = ${response}.Headers.Location;`,
+    `                ${response}.Dispose();`,
+    `                if (${redirects} == ${MAX_NEXT_LINK_REDIRECTS})`,
+    `                {`,
+    `                    throw new ${invalid}("Stopped following a next-page link after ${MAX_NEXT_LINK_REDIRECTS} redirects.");`,
+    `                }`,
+    `                ${nextUri} = new ${uri}(${nextUri}, ${location});`,
     `            }`,
-    `            ${nextLink} = ${nextPage}.${m.nextLinkPropertyName};`,
+    `            using (${response})`,
+    `            {`,
+    `                ${response}.EnsureSuccessStatusCode();`,
+    `                var ${nextPage} = await ${serializer}.FromHttpContentAsync<${m.pageType}>(${response}.Content, cancellationToken).ConfigureAwait(false);`,
+    `                if (${nextPage} is null) yield break;`,
+    `                foreach (var ${item} in ${nextPage}.${m.itemsPropertyName})`,
+    `                {`,
+    `                    cancellationToken.ThrowIfCancellationRequested();`,
+    `                    yield return ${item};`,
+    `                }`,
+    `                ${nextLink} = ${nextPage}.${m.nextLinkPropertyName};`,
+    `            }`,
     `        }`,
     `    }`,
   ];
