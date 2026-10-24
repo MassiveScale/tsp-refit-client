@@ -20,6 +20,21 @@ public abstract class KitchenSinkTests
     private (KitchenSinkClient Client, StubHandler Handler) Create() => Harness.KitchenSink(Wiring);
 
     [TestMethod]
+    public async Task A_variant_returned_on_its_own_is_read_with_the_base_it_derives_from()
+    {
+        var (client, handler) = Create();
+        handler.RespondJson("""{"kind":"guitar","name":"strat","strings":6}""");
+
+        var guitar = await client.Guitars.ReadAsync();
+
+        guitar.Should().BeAssignableTo<Instrument>();
+        guitar.Name.Should().Be("strat");
+        guitar.Strings.Should().Be(6);
+        typeof(Instrument).Assembly.GetType(typeof(Instrument).Namespace + ".Drum")
+            .Should().NotBeNull("the base's other variants are emitted with it");
+    }
+
+    [TestMethod]
     public async Task A_discriminated_hierarchy_with_a_grouping_model_is_read_as_the_right_subtypes()
     {
         var (client, handler) = Create();

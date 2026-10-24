@@ -812,6 +812,86 @@ describe("models", () => {
     );
   });
 
+  it("emits the base and its other variants when an operation returns only a derived model", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @discriminator("kind")
+      model Pet { kind: string; name: string; }
+      model Dog extends Pet { kind: "dog"; }
+      model Cat extends Pet { kind: "cat"; }
+
+      @route("/dogs")
+      interface Dogs {
+        @get read(): Dog;
+      }
+    `);
+
+    ok(
+      results["Models/Pet.g.cs"],
+      "Expected Pet emitted, since Dog's record derives from it",
+    );
+    ok(
+      results["Models/Pet.g.cs"].includes("JsonDerivedType(typeof(Cat)"),
+      "Expected the base to list every variant",
+    );
+    ok(results["Models/Cat.g.cs"], "Expected the sibling Cat emitted too");
+    ok(results["Models/Dog.g.cs"].includes("public record Dog : Pet"));
+  });
+
+  it("emits every record a returned grandchild derives from", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      @discriminator("kind")
+      model Pet { kind: string; }
+      model Dog extends Pet {}
+      model Labrador extends Dog { kind: "labrador"; }
+
+      @route("/labradors")
+      interface Labradors {
+        @get read(): Labrador;
+      }
+    `);
+
+    ok(results["Models/Dog.g.cs"], "Expected the intermediate Dog emitted");
+    ok(results["Models/Pet.g.cs"], "Expected the root Pet emitted");
+  });
+
+  it("leaves a plain base out of a hierarchy's records, since the root flattens it", async () => {
+    const results = await emit(`
+      import "@typespec/http";
+      using Http;
+
+      @service(#{ title: "Test API" })
+      namespace TestApi;
+
+      model Entity { id: string; }
+      @discriminator("kind")
+      model Pet extends Entity { kind: string; }
+      model Dog extends Pet { kind: "dog"; }
+
+      @route("/dogs")
+      interface Dogs {
+        @get read(): Dog;
+      }
+    `);
+
+    ok(results["Models/Pet.g.cs"]);
+    ok(
+      !results["Models/Entity.g.cs"],
+      "Expected no Entity record: Pet carries its properties itself",
+    );
+  });
+
   it("discovers grandchild variants through an intermediate model with no @discriminator of its own", async () => {
     const results = await emit(`
       import "@typespec/http";

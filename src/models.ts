@@ -921,6 +921,11 @@ function ownProperties(
  * nothing in the service ever references them by name (they only ever appear
  * at runtime as a polymorphic instance of their base type).
  *
+ * It also adds the base of a model in a hierarchy: the model's record derives from
+ * its base's record, so an operation that returns only a derived model
+ * (`SignedCatalog`) still needs `Catalog` emitted, along with the base's other
+ * variants that its `[JsonDerivedType]` list names.
+ *
  * Uses `findDiscriminatedRoot` (self-or-ancestor) rather than `getDiscriminator`
  * (self-only) to decide whether to keep expanding: intermediate models in a
  * multi-level hierarchy commonly don't redeclare `@discriminator` themselves,
@@ -941,6 +946,16 @@ export function collectDerivedModels(
   while (queue.length > 0) {
     const model = queue.pop()!;
     if (!findDiscriminatedRoot(program, model)) continue;
+    const base = model.baseModel;
+    if (
+      base?.name &&
+      findDiscriminatedRoot(program, base) &&
+      !models.has(declarationKey(base)) &&
+      isInVersion(program, base, version)
+    ) {
+      models.set(declarationKey(base), base);
+      queue.push(base);
+    }
     for (const derived of model.derivedModels) {
       if (!derived.name || models.has(declarationKey(derived))) continue;
       if (!isInVersion(program, derived, version)) continue;

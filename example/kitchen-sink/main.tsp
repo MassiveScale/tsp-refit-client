@@ -387,3 +387,25 @@ interface Admin {
   @post reindex(): void;
   @route("status") @get status(): Envelope<string>;
 }
+
+
+/** A hierarchy whose base no operation names: only a variant is returned. */
+@discriminator("kind")
+model Instrument {
+  kind: string;
+  name: string;
+}
+
+model Guitar extends Instrument {
+  kind: "guitar";
+  strings: int32;
+}
+
+model Drum extends Instrument {
+  kind: "drum";
+}
+
+@route("/guitars")
+interface Guitars {
+  @get read(): Guitar;
+}

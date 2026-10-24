@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A `@discriminator` model returned on its own now brings its base record into the output, together with the base's other variants. Previously only the variant was emitted, and its record did not compile because the base it derives from was missing.
+
 ## [1.0.0] - 2026-10-15
 
 The first stable release, and the first published to npm. The emitter now shares its core with its sibling, `@massivescale/tsp-flurl-client`: name validation, collision reporting, version projection, visibility filtering, type mapping, `@encode` support, and the lint rule are the same code, hardened over that emitter's development, with Refit as the transport.
