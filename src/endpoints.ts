@@ -553,11 +553,13 @@ export function buildRoute(
  * @param additionalUsings - Extra `using` directives from the `additional-usings`
  *   option, appended to every emitted file regardless of whether this particular
  *   file references anything from them (see `EmitterOptions["additional-usings"]`).
- * @returns The full C# source of the generated interface file, plus whether any
- *   of its operations produced a `nextLink`-strategy paging wrapper, and if so
- *   the exact (namespace-qualified) named `HttpClient` it resolves — the only
- *   strategy that needs a named `HttpClient`/`RefitSettings` registration —
- *   so the caller can register that same client under that same name.
+ * @param reservePagingClass - Claims the name of the `{Interface}PagingExtensions` class,
+ *   a type in the same namespace as the models; returns `false` after reporting a
+ *   collision, and the paging wrappers are then left out.
+ * @returns The full C# source of the generated interface file, plus, when one of its
+ *   operations produced a `nextLink`-strategy paging wrapper, the namespace-qualified
+ *   name of the `HttpClient` it resolves, so the caller registers the interface's
+ *   client under that name.
  */
 export function buildInterface(
   csName: string,
@@ -574,6 +576,7 @@ export function buildInterface(
   renderer: Renderer,
   rawRoutePrefix: string,
   additionalUsings: Set<string>,
+  reservePagingClass: (className: string) => boolean = () => true,
 ): { content: string; pagingHttpClientName?: string } {
   const routePrefix = resolveRoutePrefix(rawRoutePrefix, version);
   // `read` and `Read` both become `ReadAsync`, which C# would reject as a duplicate
@@ -624,7 +627,7 @@ export function buildInterface(
   // (`listAll` next to a paged `list`) would never be called. The operation keeps its
   // method and the wrapper is left out.
   const rawNames = new Set(methods.map((m) => m.methodName));
-  const pagingMethods = methods.flatMap((m) => {
+  const wrappers = methods.flatMap((m) => {
     if (!m.paging) return [];
     if (rawNames.has(m.paging.methodName)) {
       reportUnsupportedPaging(
@@ -636,6 +639,9 @@ export function buildInterface(
     }
     return [m.paging];
   });
+  const pagingClassName = `${csName}PagingExtensions`;
+  const pagingMethods =
+    wrappers.length > 0 && reservePagingClass(pagingClassName) ? wrappers : [];
   const nextLinkPagingMethod = pagingMethods.find(
     (p) => p.strategy === "nextLink",
   );
@@ -644,7 +650,7 @@ export function buildInterface(
       "\n" +
       renderer.renderPagingExtensions({
         interfaceName: csName,
-        className: `${csName}PagingExtensions`,
+        className: pagingClassName,
         access,
         methods: pagingMethods,
       });
@@ -1128,6 +1134,7 @@ function buildMethodView(
     doc,
     response ? withoutNullable(response.type) : undefined,
     response?.type.endsWith("?") ?? false,
+    pageBodyModel(op.responses),
   );
 
   return {
@@ -1436,6 +1443,26 @@ function withoutNullable(csType: string): string {
 }
 
 /**
+ * The model every success response of a paged operation carries as its body, which
+ * the paging wrapper reads the items and the next link or token from. `Page | null`
+ * and `Page | void` count as `Page`.
+ *
+ * @param responses - The operation's HTTP responses.
+ * @returns The model, or `undefined` when the successes carry different bodies or the
+ *   body is not a model (an explicit `@body items: Store[]`, for instance).
+ */
+function pageBodyModel(responses: HttpOperationResponse[]): Model | undefined {
+  const types = new Set(
+    successBodies(responses).map((b) => soleVariant(b.type)?.type ?? b.type),
+  );
+  if (types.size !== 1) return undefined;
+  const [type] = types;
+  return type.kind === "Model" && !isArrayModelType(type) && !type.indexer
+    ? type
+    : undefined;
+}
+
+/**
  * Reports the `unsupported-paging-style` warning for an operation whose
  * `@list` paging metadata doesn't resolve to a strategy this emitter can
  * generate a wrapper for. The raw single-page method is still generated.
@@ -1542,6 +1569,7 @@ function numericDefaultLiteral(property: ModelProperty): string | undefined {
  *   no response body) can't reach here, since `getPagingOperation` wouldn't
  *   have resolved a `pageItems` role in the first place.
  * @param pageNullable - Whether the raw method can return no page (a bodyless success).
+ * @param pageModel - The model the success responses carry as their body (see {@link pageBodyModel}).
  * @returns The paging wrapper view, or `undefined` when the operation isn't
  *   `@list`, carries no usable paging metadata, or resolves to an unsupported shape
  *   (in which case a diagnostic has already been reported).
@@ -1560,6 +1588,7 @@ function buildPagingMethodView(
   doc: string | undefined,
   rawResponseType: string | undefined,
   pageNullable: boolean,
+  pageModel: Model | undefined,
 ): PagingMethodView | undefined {
   if (!isList(program, operation)) return undefined;
 
@@ -1621,6 +1650,19 @@ function buildPagingMethodView(
     return undefined;
   }
 
+  // The wrapper reads every paging property off the page it got back, so each must be
+  // a property of the response body: not of an envelope around an explicit `@body`, and
+  // not a header.
+  const pageProperties = new Set(
+    pageModel ? flattenProperties(pageModel).values() : [],
+  );
+  const offBody =
+    "a paging property that is not a property of the response body (an explicit @body list, or a paging header)";
+  if (!pageProperties.has(pageItemsProp)) {
+    reportUnsupportedPaging(program, operation, offBody);
+    return undefined;
+  }
+
   const methodName = toCsPagingMethodName(baseMethodName);
 
   // Every local identifier the generated loop body introduces must avoid
@@ -1644,6 +1686,7 @@ function buildPagingMethodView(
     PagingMethodView,
     | "doc"
     | "methodName"
+    | "interfaceName"
     | "rawMethodName"
     | "itemType"
     | "pageType"
@@ -1655,6 +1698,7 @@ function buildPagingMethodView(
   > = {
     doc,
     methodName,
+    interfaceName: csName,
     rawMethodName,
     itemType,
     pageType,
@@ -1678,14 +1722,28 @@ function buildPagingMethodView(
     const nextLinkPropertyName = toCsPropName(
       getClientName(program, nextLink.property) ?? nextLink.property.name,
     );
-    const nextLinkIsString =
-      mapPropertyType(
-        nextLink.property,
+    if (!pageProperties.has(nextLink.property)) {
+      reportUnsupportedPaging(program, operation, offBody);
+      return undefined;
+    }
+    // The link is resolved with `new Uri(baseAddress, link)`, which takes a string or a
+    // Uri; a link formatted as anything else (`@format("uuid")`) cannot be followed.
+    const nextLinkType = mapPropertyType(
+      nextLink.property,
+      program,
+      models,
+      enums,
+      usedHelpers,
+    ).replace(/\?$/, "");
+    if (nextLinkType !== "string" && nextLinkType !== fx("Uri")) {
+      reportUnsupportedPaging(
         program,
-        models,
-        enums,
-        usedHelpers,
-      ).replace(/\?$/, "") === "string";
+        operation,
+        `a next link that is neither a string nor a URL (it maps to ${nextLinkType})`,
+      );
+      return undefined;
+    }
+    const nextLinkIsString = nextLinkType === "string";
 
     // Query parameters are presumed to be baked into the link by the server, as the
     // nextLink contract has it; headers and cookies are not, so they are replayed.
@@ -1740,6 +1798,10 @@ function buildPagingMethodView(
         operation,
         "a nested paging property (not declared directly on the page response model)",
       );
+      return undefined;
+    }
+    if (!pageProperties.has(continuationToken.property)) {
+      reportUnsupportedPaging(program, operation, offBody);
       return undefined;
     }
     const inputToken = pagingOp.input.continuationToken;

@@ -203,6 +203,8 @@ export interface PagingMethodView {
   strategy: PagingStrategy;
   /** Wrapper method name, e.g. `"ListAllAsync"`. */
   methodName: string;
+  /** The Refit interface the raw method belongs to, e.g. `"IStores"`. */
+  interfaceName: string;
   /** The raw single-page method this wrapper calls, e.g. `"ListAsync"`. */
   rawMethodName: string;
   /** C# type of a single page item, e.g. `"Store"`. */
@@ -530,7 +532,7 @@ function renderPagingMethodDoc(m: PagingMethodView): string[] {
     for (const docLine of m.doc.split("\n")) lines.push(`    /// ${docLine}`);
   } else {
     lines.push(
-      `    /// Retrieves every item across all pages of <see cref="${m.rawMethodName}"/>.`,
+      `    /// Retrieves every item across all pages of <see cref="${m.interfaceName}.${m.rawMethodName}"/>.`,
     );
   }
   lines.push(`    /// </summary>`);

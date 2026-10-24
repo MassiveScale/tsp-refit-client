@@ -779,6 +779,14 @@ async function emitService(
         renderer,
         rawRoutePrefix,
         additionalUsings,
+        (className) =>
+          tryReserveModelOutputName(
+            program,
+            modelOutputOwners,
+            className,
+            `the ${className} paging extensions class`,
+            NoTarget,
+          ),
       );
       endpointNames.push({ interfaceName, access, pagingHttpClientName });
       await writeFile(

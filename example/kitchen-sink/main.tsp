@@ -387,3 +387,50 @@ interface Admin {
   @post reindex(): void;
   @route("status") @get status(): Envelope<string>;
 }
+
+model Shelf {
+  name: string;
+}
+
+model LinkPage {
+  @pageItems items: Shelf[];
+  @nextLink next?: url;
+}
+
+model StringLinkPage {
+  @pageItems items: Shelf[];
+  @nextLink next?: string;
+}
+
+model TokenPage {
+  @pageItems items: Shelf[];
+  @continuationToken nextToken?: string;
+}
+
+model CountedPage {
+  @pageItems items: Shelf[];
+}
+
+/** One operation per paging style TypeSpec's core decorators express. */
+@route("/shelves")
+interface Shelves {
+  @route("links") @list @get links(
+    @header("X-Tenant") tenant?: string,
+    @header("If-Modified-Since") since?: utcDateTime,
+    @cookie session?: string,
+  ): LinkPage;
+  @route("relative") @list @get relative(): StringLinkPage;
+  @route("tokens") @list @get tokens(
+    @query @continuationToken token?: string,
+  ): TokenPage;
+  @route("offsets") @list @get offsets(
+    @query @offset offset?: int32,
+    @query @pageSize size?: int32,
+  ): CountedPage;
+  @route("indexes") @list @get indexes(
+    @query @pageIndex page?: int32 = 1,
+  ): CountedPage;
+  @route("maybe") @list @get maybe(
+    @query @continuationToken token?: string,
+  ): TokenPage | void;
+}

@@ -748,6 +748,134 @@ describe("paging", () => {
     });
   });
 
+  describe("page shapes the wrapper cannot read", () => {
+    it("rejects an explicit @body list whose next link is a header", async () => {
+      const [results, diagnostics] = await emitWithDiagnostics(`
+        import "@typespec/http";
+        using Http;
+
+        @service(#{ title: "Test API" })
+        namespace TestApi;
+
+        model Store { name: string; }
+
+        @route("/stores")
+        interface Stores {
+          @list @get list(): {
+            @body @pageItems items: Store[];
+            @header @nextLink next?: url;
+          };
+        }
+      `);
+      ok(
+        diagnostics.some(
+          (d) =>
+            d.code ===
+              "@massivescale/tsp-refit-client/unsupported-paging-style" &&
+            d.message.includes("not a property of the response body"),
+        ),
+        "Expected the off-body paging properties reported",
+      );
+      const content = results["Endpoints/IStores.g.cs"];
+      ok(content.includes("ListAsync("), "Expected the raw method kept");
+      ok(!content.includes("ListAllAsync"), "Expected no wrapper");
+    });
+
+    it("rejects a next link that maps to neither a string nor a Uri", async () => {
+      const [results, diagnostics] = await emitWithDiagnostics(`
+        import "@typespec/http";
+        using Http;
+
+        @service(#{ title: "Test API" })
+        namespace TestApi;
+
+        model Store { name: string; }
+        model StorePage { @pageItems items: Store[]; @nextLink @format("uuid") next?: string; }
+
+        @route("/stores")
+        interface Stores {
+          @list @get list(): StorePage;
+        }
+      `);
+      ok(
+        diagnostics.some(
+          (d) =>
+            d.code ===
+              "@massivescale/tsp-refit-client/unsupported-paging-style" &&
+            d.message.includes("neither a string nor a URL"),
+        ),
+      );
+      ok(!results["Endpoints/IStores.g.cs"].includes("ListAllAsync"));
+    });
+  });
+
+  describe("the extensions class", () => {
+    it("names the raw method through its interface when the operation has no doc", async () => {
+      const results = await emit(`
+        import "@typespec/http";
+        using Http;
+
+        @service(#{ title: "Test API" })
+        namespace TestApi;
+
+        model Store { name: string; }
+        model StorePage { @pageItems items: Store[]; @nextLink next?: url; }
+
+        @route("/stores")
+        interface Stores {
+          @list @get list(): StorePage;
+        }
+      `);
+      ok(
+        results["Endpoints/IStores.g.cs"].includes(
+          '/// Retrieves every item across all pages of <see cref="IStores.ListAsync"/>.',
+        ),
+        "Expected a cref that resolves from the extensions class",
+      );
+    });
+
+    it("reserves its name, so a model of the same name is reported rather than duplicated", async () => {
+      const [results, diagnostics] = await emitWithDiagnostics(`
+        import "@typespec/http";
+        using Http;
+
+        @service(#{ title: "Test API" })
+        namespace TestApi;
+
+        model Store { name: string; }
+        model StorePage { @pageItems items: Store[]; @nextLink next?: url; }
+        model IStoresPagingExtensions { name: string; }
+
+        @route("/stores")
+        interface Stores {
+          @list @get list(): StorePage;
+        }
+
+        @route("/other")
+        interface Other {
+          @get read(): IStoresPagingExtensions;
+        }
+      `);
+      ok(
+        diagnostics.some(
+          (d) =>
+            d.code === "@massivescale/tsp-refit-client/output-name-collision" &&
+            d.message.includes("IStoresPagingExtensions"),
+        ),
+        "Expected the clash reported",
+      );
+      ok(
+        !Object.keys(results).includes("Models/IStoresPagingExtensions.g.cs"),
+        "Expected no second type of that name",
+      );
+      ok(
+        results["Endpoints/IStores.g.cs"].includes(
+          "public static class IStoresPagingExtensions",
+        ),
+      );
+    });
+  });
+
   describe("wrapper names", () => {
     it("leaves out a wrapper whose name another operation's method already has", async () => {
       const [results, diagnostics] = await emitWithDiagnostics(`
