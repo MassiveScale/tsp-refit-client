@@ -324,7 +324,7 @@ describe("@encode", () => {
     strictEqual(codes(diagnostics, "unsupported-encoding").length, 0);
     ok(
       fileContent(results, "IThings.g.cs").includes(
-        '[Property(ClientRuntime.HeaderPrefix + "if-modified-since")] [ClientRuntime.Encoded(ClientRuntime.WireEncoding.Rfc7231)] DateTimeOffset? ifModifiedSince = null',
+        '[Property(ClientRuntime.HeaderPrefix + "if-modified-since")] [ClientRuntime.WireEncoded(ClientRuntime.WireEncoding.Rfc7231)] DateTimeOffset? ifModifiedSince = null',
       ),
     );
     ok(

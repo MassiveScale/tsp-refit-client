@@ -443,11 +443,11 @@ internal static class ClientRuntime
     /// formatter, the content serializer, and the message handler.
     /// </summary>
     [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.ReturnValue)]
-    internal sealed class EncodedAttribute : Attribute
+    internal sealed class WireEncodedAttribute : Attribute
     {
         /// <summary>Creates the attribute.</summary>
         /// <param name="format">The wire format.</param>
-        public EncodedAttribute(WireEncoding format) => Format = format;
+        public WireEncodedAttribute(WireEncoding format) => Format = format;
 
         /// <summary>Gets the wire format.</summary>
         public WireEncoding Format { get; }
@@ -478,7 +478,7 @@ internal static class ClientRuntime
 
     /// <summary>
     /// Formats query and path values in their wire format (see <see cref="ToWireString"/>), applying
-    /// the parameter's <see cref="EncodedAttribute"/> when it has one.
+    /// the parameter's <see cref="WireEncodedAttribute"/> when it has one.
     /// </summary>
     internal sealed class WireUrlParameterFormatter : IUrlParameterFormatter
     {
@@ -487,8 +487,8 @@ internal static class ClientRuntime
         {
             if (value is null) return null;
             var encoded = attributeProvider
-                .GetCustomAttributes(typeof(EncodedAttribute), inherit: true)
-                .OfType<EncodedAttribute>()
+                .GetCustomAttributes(typeof(WireEncodedAttribute), inherit: true)
+                .OfType<WireEncodedAttribute>()
                 .FirstOrDefault();
             return ToWireString(encoded is null ? value : Encode(value, encoded.Format));
         }
@@ -681,7 +681,7 @@ internal static class ClientRuntime
                 var name = key[prefix.Length..];
                 var encoded = parameters
                     .FirstOrDefault(p => p.GetCustomAttribute<PropertyAttribute>()?.Key == key)
-                    ?.GetCustomAttribute<EncodedAttribute>();
+                    ?.GetCustomAttribute<WireEncodedAttribute>();
                 var text = ToWireString(encoded is null ? value : Encode(value, encoded.Format));
                 if (prefix == HeaderPrefix)
                 {
@@ -724,7 +724,7 @@ internal static class ClientRuntime
                 {
                     // Refit buffers the content before the handler sees it, so a body with an
                     // @encode is replaced rather than changed.
-                    if (bodyParameter?.GetCustomAttribute<EncodedAttribute>() is { } encoded)
+                    if (bodyParameter?.GetCustomAttribute<WireEncodedAttribute>() is { } encoded)
                     {
                         request.Content = body.WithFormat(encoded.Format);
                     }
@@ -741,7 +741,7 @@ internal static class ClientRuntime
                 return response;
             }
 
-            var responseFormat = method.ReturnParameter.GetCustomAttribute<EncodedAttribute>()?.Format;
+            var responseFormat = method.ReturnParameter.GetCustomAttribute<WireEncodedAttribute>()?.Format;
             var mediaType = response.Content.Headers.ContentType?.MediaType;
             var jsonString = method.ReturnType == typeof(Task<string>) && mediaType is not null && IsJsonMediaType(mediaType);
             // Refit returns null for content of length zero without asking the serializer, so an empty

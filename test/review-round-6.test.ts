@@ -238,12 +238,12 @@ describe("decorators on a body property", () => {
     const iface = fileContent(results, "IDurations.g.cs");
     ok(
       iface.includes(
-        `[Headers("Content-Type: text/plain")]\n    Task SendAsync(${BODY} [ClientRuntime.Encoded(ClientRuntime.WireEncoding.WholeSeconds)] TimeSpan body,`,
+        `[Headers("Content-Type: text/plain")]\n    Task SendAsync(${BODY} [ClientRuntime.WireEncoded(ClientRuntime.WireEncoding.WholeSeconds)] TimeSpan body,`,
       ),
     );
     ok(
       iface.includes(
-        "[return: ClientRuntime.Encoded(ClientRuntime.WireEncoding.WholeSeconds)]\n    Task<TimeSpan> ReadAsync(",
+        "[return: ClientRuntime.WireEncoded(ClientRuntime.WireEncoding.WholeSeconds)]\n    Task<TimeSpan> ReadAsync(",
       ),
     );
   });
