@@ -275,10 +275,10 @@ describe("project file", () => {
   it("references Refit and its HttpClient factory integration, not Flurl", async () => {
     const content = fileContent(await emit(TWO_INTERFACES), ".csproj");
 
-    ok(content.includes('<PackageReference Include="Refit" Version="11.*" />'));
+    ok(content.includes('<PackageReference Include="Refit" Version="17.*" />'));
     ok(
       content.includes(
-        '<PackageReference Include="Refit.HttpClientFactory" Version="11.*" />',
+        '<PackageReference Include="Refit.HttpClientFactory.Reflection" Version="17.*" />',
       ),
     );
     doesNotMatch(content, /Flurl/);

@@ -97,8 +97,7 @@ Tests use Node.js native test runner (`node:test` / `node:assert`) — no extern
 
 ```powershell
 cd example/kitchen-sink; npm install; npx tsp compile .
-dotnet run --project ../../e2e/Refit.Tests -f net8.0
-dotnet run --project ../../e2e/Refit.Tests -f net10.0
+dotnet run --project ../../e2e/Refit.Tests
 ```
 
 On a machine whose NuGet config includes a private feed that rejects the current credentials, add `-p:RestoreSources=https://api.nuget.org/v3/index.json` to the restore.
@@ -180,8 +179,7 @@ After making any change to the codebase:
 3. **Run the end-to-end tests** (after compiling the examples):
 
    ```powershell
-   dotnet run --project e2e/Refit.Tests -f net8.0
-   dotnet run --project e2e/Refit.Tests -f net10.0
+   dotnet run --project e2e/Refit.Tests
    ```
 
 4. **Run the compile matrix**, which generates every combination TypeSpec accepts and requires each to be reported or to build and round-trip:

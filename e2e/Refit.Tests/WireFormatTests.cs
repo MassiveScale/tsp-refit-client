@@ -187,7 +187,7 @@ public abstract class WireFormatTests
 
         var act = () => client.DerivedItems.ReadAsync("1", cancellationToken: cancelled.Token);
 
-        // Refit 11 wraps a failed send, cancellation included, in an ApiRequestException.
+        // Refit 17 wraps a failed send, cancellation included, in an ApiRequestException.
         var thrown = (await act.Should().ThrowAsync<Exception>()).Which;
         Harness.Find<OperationCanceledException>(thrown).Should().NotBeNull("{0}", thrown);
     }

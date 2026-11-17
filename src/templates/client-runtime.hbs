@@ -483,7 +483,7 @@ internal static class ClientRuntime
     internal sealed class WireUrlParameterFormatter : IUrlParameterFormatter
     {
         /// <inheritdoc />
-        public string? Format(object? value, ICustomAttributeProvider attributeProvider, Type type)
+        public string? Format(object? value, IParameterAttributeProvider attributeProvider, Type type)
         {
             if (value is null) return null;
             var encoded = attributeProvider

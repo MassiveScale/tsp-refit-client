@@ -395,16 +395,16 @@ export function runDotnetFormat(
 }
 
 /** The lowest .NET major version the generated runtime supports. */
-const MIN_DOTNET_MAJOR = 8;
+const MIN_DOTNET_MAJOR = 10;
 
 /**
  * Splits the `net-version` option into its target framework monikers.
  *
- * @param raw - The option value; `net8.0` when omitted.
+ * @param raw - The option value; `net10.0` when omitted.
  * @returns The trimmed, non-empty monikers in order.
  */
 export function splitTargetFrameworks(raw: string | undefined): string[] {
-  return (raw ?? "net8.0")
+  return (raw ?? "net10.0")
     .split(";")
     .map((v) => v.trim())
     .filter(Boolean);
@@ -412,7 +412,7 @@ export function splitTargetFrameworks(raw: string | undefined): string[] {
 
 /**
  * Whether a target framework moniker is one the generated code can build for:
- * `net8.0` or later, optionally with an OS suffix such as `net8.0-windows`. The
+ * `net10.0` or later, optionally with an OS suffix such as `net10.0-windows`. The
  * runtime relies on System.Text.Json contract customization, which older targets
  * (`net7.0`, `netstandard2.0`, `netcoreapp3.1`) do not provide.
  *
@@ -457,7 +457,7 @@ function validateOptions(program: Program, options: EmitterOptions): boolean {
     problems.push({
       option: "net-version",
       value: options["net-version"] ?? "",
-      reason: "names no target framework; use a value such as `net8.0`",
+      reason: "names no target framework; use a value such as `net10.0`",
     });
   }
   for (const tfm of frameworks) {

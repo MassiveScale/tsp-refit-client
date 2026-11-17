@@ -44,7 +44,7 @@ tsp compile .
 | `client-name`                 | `string`   | Derived from `project-name`                   | Display name for the client. Controls the aggregate client class and the DI extension class/method prefix (e.g. `PetStore` → `PetStoreExtensions.g.cs`, `AddPetStore(...)`). Also used as the default NuGet `<Title>` unless `nuget-title` is set.                                                                                                            |
 | `root-namespace`              | `string`   | TypeSpec namespace + `.Client`                | Overrides the root C# namespace for all generated files.                                                                                                                                                                                                                                                                                                      |
 | `additional-usings`           | `string[]` | —                                             | Extra `using` directives appended to every emitted C# file, for a service that references types emitted elsewhere (for example a sibling emitter's shared namespace). Each entry must be a dotted C# namespace such as `Acme.Shared.Models`; anything else is reported as `invalid-option` and nothing is emitted.                                              |
-| `net-version`                 | `string`   | `net8.0`                                      | Target .NET version(s) written into the `.csproj`: a single TFM (`net8.0`) or a semicolon-separated list (`net8.0;net9.0`). **.NET 8 or later is required**; `net7.0`, `netstandard2.0` and the like are reported as `invalid-option`. A platform suffix such as `net8.0-windows` is allowed.                                                                  |
+| `net-version`                 | `string`   | `net10.0`                                     | Target .NET version(s) written into the `.csproj`: a single TFM (`net10.0`) or a semicolon-separated list (`net10.0;net11.0`). **.NET 10 or later is required**; `net9.0`, `net8.0`, `netstandard2.0` and the like are reported as `invalid-option`. A platform suffix such as `net10.0-windows` is allowed.                                                                  |
 | `target-version`              | `string`   | Latest declared version                       | Emit only this API version. Ignored when `all-versions` is `true`.                                                                                                                                                                                                                                                                                            |
 | `all-versions`                | `boolean`  | `false`                                       | When `true`, generate every declared API version, each in its own subfolder and `V<version>` namespace with its own models. See [Multiple API versions](#multiple-api-versions).                                                                                                                                                                              |
 | `version-in-namespace`        | `boolean`  | `false`                                       | When `true`, append the sanitized API version to the endpoint namespace in single-version mode. Has no effect when `all-versions` is `true`.                                                                                                                                                                                                                  |
@@ -160,7 +160,7 @@ After running `tsp compile`, the emitter writes a self-contained C# project to y
   Infrastructure/
     ClientRuntime.g.cs       # Refit settings, message handler, wire formats (internal)
   ApiClientExtensions.g.cs   # Aggregate client + DI registration helper
-  ApiClient.csproj           # Project file (Refit + Refit.HttpClientFactory)
+  ApiClient.csproj           # Project file (Refit + Refit.HttpClientFactory.Reflection)
 ```
 
 ### 1. Reference the generated project
@@ -267,8 +267,8 @@ await api.Items.ListAsync(
 
 ## Requirements
 
-- **.NET 8 or later.**
-- Refit and Refit.HttpClientFactory 11.x (referenced by the generated project).
+- **.NET 10 or later.**
+- Refit and Refit.HttpClientFactory.Reflection 17.x (referenced by the generated project).
 
 ## How requests are sent
 
@@ -522,8 +522,7 @@ The end-to-end tests compile the examples, then run the **generated C#** against
 
 ```powershell
 cd example/kitchen-sink; npm install; npx tsp compile .
-dotnet run --project ../../e2e/Refit.Tests -f net8.0
-dotnet run --project ../../e2e/Refit.Tests -f net10.0
+dotnet run --project ../../e2e/Refit.Tests
 ```
 
 ### Compile matrix
