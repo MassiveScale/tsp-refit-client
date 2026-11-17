@@ -195,7 +195,7 @@ const converter = (e: Encoding): string =>
 
 /** The attribute that tells the runtime which wire format a parameter or text body is written in. */
 const encoded = (e: Encoding): string =>
-  `[ClientRuntime.Encoded(ClientRuntime.WireEncoding.${e.wire})]`;
+  `[ClientRuntime.WireEncoded(ClientRuntime.WireEncoding.${e.wire})]`;
 
 /** The Refit collection format of a query list with a delimited `@encode`. */
 const COLLECTION_FORMATS: Record<string, string> = {
@@ -238,7 +238,7 @@ function isJsonMediaType(mediaType: string): boolean {
 /**
  * How the runtime's `WireContent` writes the request body of the file's single
  * method: JSON for a JSON (or undeclared) `Content-Type`, the raw bytes of a byte
- * array with no `[ClientRuntime.Encoded]` under a non-text media type, and plain
+ * array with no `[ClientRuntime.WireEncoded]` under a non-text media type, and plain
  * text otherwise.
  *
  * @param file - The generated Refit interface.
@@ -254,7 +254,7 @@ function requestTransport(file: string): Transport {
     .toLowerCase();
   if (isJsonMediaType(mediaType)) return "json";
   const body =
-    /\[Body\([^)]*\)\] (\[ClientRuntime\.Encoded\([^\]]*\)\] )?(\S+) body\b/.exec(
+    /\[Body\([^)]*\)\] (\[ClientRuntime.WireEncoded\([^\]]*\)\] )?(\S+) body\b/.exec(
       file,
     );
   if (
@@ -271,7 +271,7 @@ function requestTransport(file: string): Transport {
 /**
  * How the runtime's `WireContentSerializer` reads the response of the file's single
  * method when it arrives with its declared non-JSON media type: a byte array with
- * no `[return: ClientRuntime.Encoded]` is handed over raw, and any other scalar is
+ * no `[return: ClientRuntime.WireEncoded]` is handed over raw, and any other scalar is
  * read from its text.
  *
  * @param file - The generated Refit interface.
@@ -279,7 +279,7 @@ function requestTransport(file: string): Transport {
  */
 function responseTransport(file: string): Transport {
   return /Task<byte\[\]\??> \w+Async\(/.test(file) &&
-    !/\[return: ClientRuntime\.Encoded\(/.test(file)
+    !/\[return: ClientRuntime.WireEncoded\(/.test(file)
     ? "bytes"
     : "text";
 }
@@ -386,7 +386,7 @@ const POSITIONS: Position[] = [
       `@route("/x") interface X { @get read(): { @body ${e.decorator} v: ${e.type} }; }`,
     file: "Endpoints/IX.g.cs",
     applied: (e) =>
-      `[return: ClientRuntime.Encoded(ClientRuntime.WireEncoding.${e.wire})]`,
+      `[return: ClientRuntime.WireEncoded(ClientRuntime.WireEncoding.${e.wire})]`,
     carries: ["default", "number-as-string", "wire"],
     wholeBody: true,
     transport: { of: responseTransport, expected: "text" },

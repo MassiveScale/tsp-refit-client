@@ -22,18 +22,18 @@ describe("project", () => {
     ok(csproj, "Expected .csproj file");
     const content = results[csproj];
     ok(
-      content.includes('<PackageReference Include="Refit" Version="11.*" />'),
+      content.includes('<PackageReference Include="Refit" Version="17.*" />'),
       "Expected Refit reference",
     );
     ok(
       content.includes(
-        '<PackageReference Include="Refit.HttpClientFactory" Version="11.*" />',
+        '<PackageReference Include="Refit.HttpClientFactory.Reflection" Version="17.*" />',
       ),
-      "Expected Refit.HttpClientFactory reference, which provides AddRefitClient",
+      "Expected Refit.HttpClientFactory.Reflection reference, which provides AddRefitClient",
     );
     ok(!content.includes("Flurl"), "Did not expect a Flurl reference");
     ok(
-      content.includes("<TargetFramework>net8.0</TargetFramework>"),
+      content.includes("<TargetFramework>net10.0</TargetFramework>"),
       "Expected singular TargetFramework for default",
     );
   });
@@ -52,14 +52,14 @@ describe("project", () => {
         @get list(): string[];
       }
     `,
-      { "net-version": "net8.0;net9.0" },
+      { "net-version": "net10.0;net11.0" },
     );
 
     const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
     ok(csproj, "Expected .csproj file");
     const content = results[csproj];
     ok(
-      content.includes("<TargetFrameworks>net8.0;net9.0</TargetFrameworks>"),
+      content.includes("<TargetFrameworks>net10.0;net11.0</TargetFrameworks>"),
       "Expected plural TargetFrameworks for multi-target",
     );
     ok(
@@ -82,14 +82,14 @@ describe("project", () => {
         @get list(): string[];
       }
     `,
-      { "net-version": "net8.0 ; net9.0" },
+      { "net-version": "net10.0 ; net11.0" },
     );
 
     const csproj = Object.keys(results).find((k) => k.endsWith(".csproj"));
     ok(csproj, "Expected .csproj file");
     ok(
       results[csproj].includes(
-        "<TargetFrameworks>net8.0;net9.0</TargetFrameworks>",
+        "<TargetFrameworks>net10.0;net11.0</TargetFrameworks>",
       ),
       "Expected whitespace trimmed from TFMs",
     );

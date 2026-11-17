@@ -76,7 +76,7 @@ Import direction is a DAG: `utils` ← `models` ← `endpoints`; `helpers`/`clie
 
 Refit's defaults would send several TypeSpec values in the wrong format: header values through `ToString()` (`True`, an enum's C# name), query and path values in the current culture, durations as `01:30:00`, a `byte[]` body as base64 JSON, and a JSON string body unquoted. So every generated project carries `Infrastructure/ClientRuntime.g.cs` (`src/templates/client-runtime.hbs`), and every interface is created through `Add{Client}` or `{Client}.Create`, which install it:
 
-1. **`WireUrlParameterFormatter`** (the Refit `IUrlParameterFormatter`) writes query and path values with `ToWireString`, applying a parameter's `[ClientRuntime.Encoded]` attribute.
+1. **`WireUrlParameterFormatter`** (the Refit `IUrlParameterFormatter`) writes query and path values with `ToWireString`, applying a parameter's `[ClientRuntime.WireEncoded]` attribute.
 2. **`WireContentSerializer`** (the Refit `IHttpContentSerializer`) returns a `WireContent` for every body (bodies are `[Body(BodySerializationMethod.Serialized, true)]`, so Refit buffers it rather than wrapping it). `WireContent` is written in the format of the `Content-Type` the method declares with `[Headers]`: JSON, raw bytes, or text in the declared charset. It reads responses as JSON, raw bytes, or text by the `Content-Type` that arrives.
 3. **`WireHandler`** (a `DelegatingHandler`) reads Refit's `RestMethodInfo` from the request options and writes the `[Property]` values keyed with `HeaderPrefix`, `CookiePrefix` and `QueryPrefix` (headers, cookies, and query values Refit cannot write itself: bytes and newline-delimited lists), applies a text body's `@encode`, drops an optional body that was left out, returns `null` for a bodyless success status (`[ClientRuntime.EmptyStatus]`), applies a response `@encode`, and unquotes a JSON string response.
 
@@ -97,8 +97,7 @@ Tests use Node.js native test runner (`node:test` / `node:assert`) — no extern
 
 ```powershell
 cd example/kitchen-sink; npm install; npx tsp compile .
-dotnet run --project ../../e2e/Refit.Tests -f net8.0
-dotnet run --project ../../e2e/Refit.Tests -f net10.0
+dotnet run --project ../../e2e/Refit.Tests
 ```
 
 On a machine whose NuGet config includes a private feed that rejects the current credentials, add `-p:RestoreSources=https://api.nuget.org/v3/index.json` to the restore.
@@ -180,8 +179,7 @@ After making any change to the codebase:
 3. **Run the end-to-end tests** (after compiling the examples):
 
    ```powershell
-   dotnet run --project e2e/Refit.Tests -f net8.0
-   dotnet run --project e2e/Refit.Tests -f net10.0
+   dotnet run --project e2e/Refit.Tests
    ```
 
 4. **Run the compile matrix**, which generates every combination TypeSpec accepts and requires each to be reported or to build and round-trip:

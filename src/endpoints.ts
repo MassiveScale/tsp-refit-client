@@ -735,14 +735,14 @@ function emptyStatusArguments(
 }
 
 /**
- * The `[ClientRuntime.Encoded(...)]` attribute for a wire format, read by the URL
+ * The `[ClientRuntime.WireEncoded(...)]` attribute for a wire format, read by the URL
  * formatter, the content serializer, and the message handler.
  *
  * @param wire - The wire format.
  * @returns The attribute, without brackets.
  */
 function encodedAttribute(wire: WireEncoding): string {
-  return `ClientRuntime.Encoded(ClientRuntime.WireEncoding.${wire})`;
+  return `ClientRuntime.WireEncoded(ClientRuntime.WireEncoding.${wire})`;
 }
 
 /**

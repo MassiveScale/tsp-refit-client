@@ -98,7 +98,7 @@ describe("success responses with the same type in different formats", () => {
     const iface = fileContent(results, "IDurations.g.cs");
     ok(
       iface.includes(
-        "[return: ClientRuntime.Encoded(ClientRuntime.WireEncoding.WholeSeconds)]",
+        "[return: ClientRuntime.WireEncoded(ClientRuntime.WireEncoding.WholeSeconds)]",
       ),
       iface,
     );

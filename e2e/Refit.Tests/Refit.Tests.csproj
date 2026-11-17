@@ -1,7 +1,7 @@
 <Project Sdk="MSTest.Sdk/4.2.3">
 
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Refit grants its own "Refit.Tests" assembly internals access, so this one is named apart from it. -->
@@ -15,7 +15,7 @@
 
   <ItemGroup>
     <PackageReference Include="AwesomeAssertions" Version="9.*" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.*" />
     <ProjectReference Include="../../example/kitchen-sink/tsp-output/MassiveScale.KitchenSinkClient.csproj" />
     <ProjectReference Include="../../example/all-versions/tsp-output/MassiveScale.AllVersionsClient.csproj" />
     <ProjectReference Include="../../example/simple-api/tsp-output/MassiveScale.Simple.Api.ExampleClient.csproj" />

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-17
+
+### Breaking
+
+- **The generated client targets .NET 10.** `net-version` defaults to `net10.0` and must be `net10.0` or later, because .NET 8 is out of support. `net8.0` and `net9.0` are now reported as `invalid-option`. Set `net-version` explicitly if you pinned an older value.
+- **The generated project references Refit 17.** It depends on `Refit` and `Refit.HttpClientFactory.Reflection` (which brings `Refit.Reflection`) instead of `Refit` and `Refit.HttpClientFactory` 11.x, because Refit 17 moved reflection-based request building, `RestService.For` and `AddRefitClient` into the reflection packages. Pass `RestService.For` the same `CreateRefitSettings()` as before; a project that built interfaces itself needs the `Refit.Reflection` package.
+
 ## [1.1.0] - 2026-10-24
 
 ### Added
